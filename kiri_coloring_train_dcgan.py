@@ -156,14 +156,6 @@ def gan_s1(GPUs, start_idx, batch_size):
     q2 = dataQ(cdgen, args.queue_size, MP=True)
     sleep(args.queue_size/4)
 
-    # cdgens = []
-    # q2s = []
-    # for i in range(len(Colors)):
-    #     cdgen = Comb_Datagenerator(color_path=img_dir, batch_size=batch_size, val=i)
-    #     q2 = dataQ(cdgen, args.queue_size, MP=True)
-    #     cdgens.append(cdgen)
-    #     q2s.append(q2)
-    #     sleep(args.queue_size/4)
 
     cdgen_valid = Comb_Datagenerator(color_path=img_dir, batch_size=batch_size, val=999)
     q_valid_g = dataQ(cdgen_valid, args.queue_size, MP=True)

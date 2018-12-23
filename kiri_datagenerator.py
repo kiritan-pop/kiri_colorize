@@ -407,6 +407,7 @@ class Comb_DatageneratorS2():
         def func(path):
             img, line = image_arrange(path, resize=STANDARD_SIZE_S2)
             img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            img_small = img_small.filter(ImageFilter.GaussianBlur(random.randint(0,2)))
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
