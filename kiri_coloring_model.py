@@ -167,14 +167,8 @@ def build_discriminatorS2():
     en_alpha=0.3
     stddev=0.15 #0.2でいいかな？
 
-    input_label = Input(shape=(1,), name="d_s2_input_label")
-    label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
-    label = Reshape(target_shape=(1, 1, 3))(label)
-    label = UpSampling2D(size=(512, 512))(label) #128
-
-    input_image = Input(shape=(512, 512, 3), name="d_s2_input_main")
-    model = Concatenate()([input_image, label])
-    model = GaussianNoise(stddev)(model)
+    input_image = Input(shape=(512, 512, 3), name="d_s2_input_image")
+    model = GaussianNoise(stddev)(input_image)
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -203,7 +197,7 @@ def build_discriminatorS2():
     model = GlobalAveragePooling2D()(model)
     model = Dense(2)(model)
     truefake = Activation('softmax', name="d_s2_out1_trfk")(model)
-    return Model(inputs=[input_image, input_label], outputs=[truefake])
+    return Model(inputs=[input_image], outputs=[truefake])
 
 
 def build_generatorS2():
@@ -219,9 +213,9 @@ def build_generatorS2():
 
     input_color = Input(shape=(128, 128, 3), name="g_s2_input_color")
     color = UpSampling2D(size=(4, 4))(input_color) #128
+    color = GaussianNoise(0.3)(color)
 
     model = Concatenate()([line, color])
-    model = GaussianNoise(en_stddev)(model)
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -319,7 +313,7 @@ def build_generatorS2():
     return Model(inputs=[input_line, input_color], outputs=[model])
 
 def build_combinedS2(generator, discriminator):
-    return Model(inputs=[generator.inputs[0], generator.inputs[1], generator.inputs[2]], outputs=[discriminator([generator.outputs[0], generator.inputs[1]]), generator.outputs[0]] )
+    return Model(inputs=[generator.inputs[0], generator.inputs[1]], outputs=[discriminator(generator.outputs[0]), generator.outputs[0]] )
 
 def build_frozen_discriminator(discriminator):
     frozen_d = Model(inputs=discriminator.inputs, outputs=discriminator.outputs)

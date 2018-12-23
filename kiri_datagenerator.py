@@ -139,7 +139,7 @@ class D_Datagenerator():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,50)
+                r = random.randint(0,self.batch_size*5)
                 if r == 0:
                     filename = f'temp/gen_{selcol3}.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -278,7 +278,7 @@ class D_DatageneratorS2():
         img_s = np.zeros((STANDARD_SIZE_S1[0],STANDARD_SIZE_S1[1],3))
         img = np.zeros((STANDARD_SIZE_S2[0],STANDARD_SIZE_S2[1]))
         with graph.as_default():
-            g_model.predict_on_batch([np.array([img]), np.array([Colors['red']]), np.array([img_s])])
+            g_model.predict_on_batch([np.array([img]), np.array([img_s])])
         sleep(2)
 
     def __getitem__(self, idx):
@@ -305,26 +305,13 @@ class D_DatageneratorS2():
             selcol = path.split('/')[-2]
             selvec = Colors[selcol]
 
-            if rand%3 == 0:
+            if rand%2 == 0:
                 #本物
                 x = img
                 retvecs = selvec
                 lines = line
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([1.0 - r, 0.0 + r])
-
-            elif rand%3 == 1:
-                #本物だけど、色間違い
-                x = img
-                # カラーラベルランダム取得（正解以外）
-                tmpcol = list(Colors.keys())
-                tmpcol.remove(selcol) 
-                selcol2 = random.choice(tmpcol)
-                selvec2 = Colors[selcol2]
-                retvecs = selvec2
-                lines = line
-                r = random.uniform(0.0, 0.2)
-                y = np.asarray([0.0 + r, 1.0 - r])
 
             else:
                 #偽物
@@ -336,7 +323,7 @@ class D_DatageneratorS2():
                     x = self.old_fake[path]
                 else:
                     with graph.as_default():
-                        ret = self.g_model.predict_on_batch([np.array([line]), np.array([selvec3]), np.array([img_small])])
+                        ret = self.g_model.predict_on_batch([np.array([line]), np.array([img_small])])
                     x = ret[0]
 
                 retvecs = selvec3
@@ -344,13 +331,13 @@ class D_DatageneratorS2():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,5)
+                r = random.randint(0,self.batch_size*5)
                 if r == 0:
-                    filename = f'temp/gen2_{selcol3}.png'
+                    filename = f'temp/gen2.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
-                    filename = f'temp/gen2_{selcol3}_in.png'
+                    filename = f'temp/gen2_in.png'
                     tmp = (line*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
@@ -370,18 +357,15 @@ class D_DatageneratorS2():
 
         #順序がバラバラにならないように
         x = []
-        lines = []
-        retvecs = []
         y = []
         while xy.qsize() > 0:
             a,b,c,d = xy.get()
             x.append(a)
-            lines.append(b)
-            retvecs.append(c)
+            # lines.append(b)
+            # retvecs.append(c)
             y.append(d)
 
-        # return [np.asarray(x), np.asarray(lines), np.asarray(retvecs)], np.asarray(y)
-        return [np.asarray(x), np.asarray(retvecs)], np.asarray(y)
+        return np.asarray(x), np.asarray(y)
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！
@@ -443,19 +427,19 @@ class Comb_DatageneratorS2():
 
         #順序がバラバラにならないように
         x = []
-        selvecs = []
+        # selvecs = []
         s1gen = []
         y = []
         y_imgs = []
         while xy.qsize() > 0:
-            a,b,e,c,d = xy.get()
+            a,e,c,d = xy.get()
             x.append(a)
-            selvecs.append(b)
+            # selvecs.append(b)
             s1gen.append(e)
             y.append(c)
             y_imgs.append(d)
 
-        return [np.asarray(x), np.asarray(selvecs), np.asarray(s1gen)], [np.asarray(y), np.asarray(y_imgs)]
+        return [np.asarray(x), np.asarray(s1gen)], [np.asarray(y), np.asarray(y_imgs)]
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！

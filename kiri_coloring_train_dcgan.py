@@ -226,7 +226,7 @@ def gan_s2(GPUs, start_idx, batch_size):
 
     def d_on_epoch_end(epoch):
         d_model_s2.save(d_model_s2_path)
-        discrimin_test(d_model_s2_tr, epoch, result_path, q_valid_d)
+        discrimin_testS2(d_model_s2_tr, epoch, result_path, q_valid_d)
 
     #######################################################
     # STAGE-2
@@ -293,7 +293,7 @@ def gan_s2(GPUs, start_idx, batch_size):
     # discriminator用のデータジェネレータ、データを格納するキュー
     ddgens = []
     q1s = []
-    for i in range(3):
+    for i in range(2):
         ddgen = D_DatageneratorS2(color_path=img_dir, batch_size=batch_size, g_model=g_model_s2_tr ,val=i)
         q1 = dataQ(ddgen, args.queue_size)
         ddgens.append(ddgen)
@@ -319,7 +319,7 @@ def gan_s2(GPUs, start_idx, batch_size):
         print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
         if pre_d_loss * 1.2 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
             d_losses = []
-            for i in range(3):
+            for i in range(2):
                 x,y = q1s[i].get()
                 d_loss = d_model_s2_tr.train_on_batch(x, y)
                 d_losses.append(d_loss)
@@ -446,6 +446,22 @@ def discrimin_test(d_model, epoch, result_path, queue, stage=1):
     # for i,(img,num,result) in enumerate(zip(imgs,colvecs,results)):
         cl = Colors_rev[colornums[i]]        
         filename = f'd{i:02}[{cl}][{results[i,0]:1.2f}][{results[i,1]:1.2f}].png'
+        tmp = (imgs[i]*127.5+127.5).clip(0, 255).astype(np.uint8)
+        Image.fromarray(tmp).save(save_path + filename, 'png', optimize=True)
+
+def discrimin_testS2(d_model, epoch, result_path, queue, stage=2):
+    #判定
+    imgs, _ = queue.get()
+    results = d_model.predict_on_batch(imgs)
+    #確認用保存
+    save_path = result_path + f'd{stage}_{epoch:06}/'
+
+    if not os.path.exists(save_path):
+        os.mkdir(save_path)
+
+    for i in range(results.shape[0]):
+    # for i,(img,num,result) in enumerate(zip(imgs,colvecs,results)):
+        filename = f'd{i:02}[{results[i,0]:1.2f}][{results[i,1]:1.2f}].png'
         tmp = (imgs[i]*127.5+127.5).clip(0, 255).astype(np.uint8)
         Image.fromarray(tmp).save(save_path + filename, 'png', optimize=True)
 
