@@ -1,0 +1,13 @@
+*.txt
+*.h5
+*.png
+__pycache__/
+class_col/
+line_images/
+results/
+temp2/
+test/
+test_short/
+line_images_new/
+test_colored/
+test_short_colored/
