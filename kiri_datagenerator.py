@@ -139,7 +139,7 @@ class D_Datagenerator():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*5)
+                r = random.randint(0,self.batch_size*20)
                 if r == 0:
                     filename = f'temp/gen_{selcol3}.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -151,6 +151,9 @@ class D_Datagenerator():
 
                     #偽物画像を保存しておく（次のDiscriminater用の学習へ）
                     self.old_fake[path] = x
+
+                    if len(self.old_fake) > 1000:
+                        del self.old_fake[random.choice(list(self.old_fake.keys() ))]
 
             xy.put([x, lines, retvecs, y])
 
@@ -331,7 +334,7 @@ class D_DatageneratorS2():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*5)
+                r = random.randint(0,self.batch_size*20)
                 if r == 0:
                     filename = f'temp/gen2.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -343,6 +346,9 @@ class D_DatageneratorS2():
 
                     #偽物画像を保存しておく（次のDiscriminater用の学習へ）
                     self.old_fake[path] = x
+
+                    if len(self.old_fake) > 1000:
+                        del self.old_fake[random.choice(list(self.old_fake.keys() ))]
 
             xy.put([x, lines, retvecs, y])
 
@@ -359,7 +365,7 @@ class D_DatageneratorS2():
         x = []
         y = []
         while xy.qsize() > 0:
-            a,b,c,d = xy.get()
+            a,_,_,d = xy.get()
             x.append(a)
             # lines.append(b)
             # retvecs.append(c)
@@ -407,7 +413,7 @@ class Comb_DatageneratorS2():
         def func(path):
             img, line = image_arrange(path, resize=STANDARD_SIZE_S2)
             img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-            img_small = img_small.filter(ImageFilter.GaussianBlur(random.randint(0,2)))
+            img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 1.2)) )
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5

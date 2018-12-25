@@ -121,7 +121,7 @@ def gan_s1(GPUs, start_idx, batch_size):
         combined = _tmpmdl
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'],  #, 'categorical_crossentropy'], #, 'mean_squared_error'],
-                    loss_weights=[1.0, 0.05],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
+                    loss_weights=[1.0, 0.1],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
                     # optimizer=Adam(lr=4e-4, beta_1=0.5),
                     # optimizer=Adam(lr=1e-4) #, beta_1=0.5) #, decay=1e-5),
                     # optimizer=Adam(lr=1e-4),  #1e-4でよさそう
@@ -270,7 +270,7 @@ def gan_s2(GPUs, start_idx, batch_size):
         combined = _tmpmdl
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'], 
-                    loss_weights=[1.0, 0.05],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
+                    loss_weights=[1.0, 0.1],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
                     optimizer=Nadam(),
                     )
 

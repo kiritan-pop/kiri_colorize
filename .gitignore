@@ -4,8 +4,9 @@
 __pycache__/
 class_col/
 line_images/
-results/
-temp2/
+results
+temp
+temp2
 test/
 test_short/
 line_images_new/

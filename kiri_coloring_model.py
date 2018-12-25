@@ -11,11 +11,11 @@ def build_discriminator():
     input_label = Input(shape=(1,), name="d_s1_input_label")
     label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
     label = Reshape(target_shape=(1, 1, 3))(label)
-    label = UpSampling2D(size=(128,128))(label) #128
+    label = UpSampling2D(size=(16, 16))(label) 
 
     input_image = Input(shape=(128, 128, 3), name="d_s1_input_main")
-    model = Concatenate()([input_image, label])
-    model = GaussianNoise(stddev)(model)
+
+    model = GaussianNoise(stddev)(input_image)
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -37,6 +37,7 @@ def build_discriminator():
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
 
+    model = Concatenate()([model, label])
     model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -56,17 +57,16 @@ def build_generator():
     input_label = Input(shape=(1,), name="g_s1_input_label")
     label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
     label = Reshape(target_shape=(1, 1, 3))(label)
-    label = UpSampling2D(size=(128,128))(label) #128
-
+    label = UpSampling2D(size=(8,8))(label) #8
 
     input_tensor = Input(shape=(128, 128), name="g_s1_input_main")
     model = Reshape(target_shape=(128, 128, 1))(input_tensor)
-    model = Concatenate()([model,label])
+
     model = GaussianNoise(en_stddev)(model)
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
-    e128 = model
+    # e128 = model
 
     model = Dropout(en_d_out)(model)
     model = Conv2D(filters=64,  kernel_size=4, strides=2, padding='same')(model) # > 64
@@ -107,6 +107,7 @@ def build_generator():
     model = LeakyReLU(alpha=en_alpha)(model)
     e8 = model
 
+    model = Concatenate()([model,label])
     model = GaussianNoise(en_stddev)(model)
     model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
