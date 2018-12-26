@@ -15,7 +15,7 @@ import argparse
 from kiri_coloring_model import build_generator, build_discriminator, build_combined, build_frozen_discriminator,\
                                 build_generatorS2, build_discriminatorS2, build_combinedS2
 from kiri_datagenerator import D_Datagenerator, Comb_Datagenerator, Colors, STANDARD_SIZE_S1, STANDARD_SIZE_S2, Colors_rev,\
-                                D_DatageneratorS2, Comb_DatageneratorS2
+                                D_DatageneratorS2, Comb_DatageneratorS2, expand2square
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -351,6 +351,15 @@ def gan_s2(GPUs, start_idx, batch_size):
             g_on_epoch_end(epoch)
             d_on_epoch_end(epoch)
 
+def image_resize(img, resize):
+    # アスペクト比維持
+    tmp = img
+    # tmp.thumbnail(resize,Image.BICUBIC)
+    if tmp.mode == 'L':
+        tmp = expand2square(tmp,(255,))
+    else:
+        tmp = expand2square(tmp,(255,255,255))
+    return tmp.resize(resize,Image.BICUBIC)
 
 def generator_test(g_model, test_dir, epoch, result_path, short=False):
     i_dirs = []
@@ -360,10 +369,8 @@ def generator_test(g_model, test_dir, epoch, result_path, short=False):
     for image_path in random.sample(i_dirs,min([len(i_dirs),3])):
         img = Image.open(image_path)
         img = img.convert('L')
-        img = img.resize(STANDARD_SIZE_S1,Image.BICUBIC)
+        img = image_resize(img,STANDARD_SIZE_S1)
         img = (np.asarray(img)-127.5)/127.5
-        # selcol = random.choice(list(Colors.keys()))
-        # colorvec = Colors[selcol]
         for selcol, colorvec in Colors.items():
             ret = g_model.predict_on_batch([np.array([img]), np.array([colorvec])])
 
@@ -394,12 +401,14 @@ def generator_testS2(g_model_s2, test_dir, epoch, result_path, short=False):
             i_dirs.append(test_dir + f)
     for image_path in random.sample(i_dirs,min([len(i_dirs),3])):
         img = Image.open(image_path).convert('L')
-        line_s2 = img.resize(STANDARD_SIZE_S2,Image.BICUBIC)
+        line_s2 = image_resize(img, STANDARD_SIZE_S2)
+        # line_s2 = img.resize(STANDARD_SIZE_S2,Image.BICUBIC)
         line_s2 = (np.asarray(line_s2)-127.5)/127.5
         for selcol in Colors.keys():
             gen_image_path = test_dir.rsplit("/",1)[0] + "_colored/" + selcol + "/" + image_path.rsplit("/",1)[-1]
             gens1 = Image.open(gen_image_path).convert('RGB')
-            gens1 = gens1.resize(STANDARD_SIZE_S1,Image.BICUBIC)
+            gens1 = image_resize(gens1, STANDARD_SIZE_S1)
+            # gens1 = gens1.resize(STANDARD_SIZE_S1,Image.BICUBIC)
             gens1 = (np.asarray(gens1)-127.5)/127.5
             ret = g_model_s2.predict_on_batch([np.array([line_s2]), np.array([gens1]) ])
 

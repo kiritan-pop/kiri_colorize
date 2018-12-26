@@ -30,11 +30,18 @@ def image_to_line_open(path):
     line_path = "/".join(tmp)
     return Image.open(line_path).convert("L")
 
-def line_enhance(img): # img:RGBモード
-    gray = img.convert("L") #グレイスケール
-    # gray = gray.filter(ImageFilter.MinFilter(3))
-    gray = gray.convert("RGB") #グレイスケール
-    return gray
+def expand2square(pil_img, background_color):
+    width, height = pil_img.size
+    if width == height:
+        return pil_img
+    elif width > height:
+        result = Image.new(pil_img.mode, (width, width), background_color)
+        result.paste(pil_img, (0, (width - height) // 2))
+        return result
+    else:
+        result = Image.new(pil_img.mode, (height, height), background_color)
+        result.paste(pil_img, ((height - width) // 2, 0))
+        return result
 
 def image_arrange(path, resize=(128,128)):
     img = Image.open(path).convert('RGB')
@@ -45,8 +52,16 @@ def image_arrange(path, resize=(128,128)):
     #線画（線画化してからリサイズ）
     line = image_to_line_open(path)
 
-    img = img.resize(resize, Image.BICUBIC).rotate(rotate_rate, expand=False, resample=Image.NEAREST)
-    line = line.resize(resize, Image.BICUBIC).rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+    # アスペクト比維持するように変更
+    # img = img.resize(resize, Image.BICUBIC)
+    img.thumbnail(resize,Image.BICUBIC)
+    img = expand2square(img,(255,255,255))
+    img = img.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+ 
+    # line = line.resize(resize, Image.BICUBIC)
+    line.thumbnail(resize,Image.BICUBIC)
+    line = expand2square(line,(255,))
+    line = line.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
 
     if mirror ==0:
         img = ImageOps.mirror(img)
