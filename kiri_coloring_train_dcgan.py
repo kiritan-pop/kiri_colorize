@@ -312,17 +312,24 @@ def gan_s2(GPUs, start_idx, batch_size):
         if pre_d_loss * 1.2 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
             d_losses = []
             for i in range(2):
-                x,y = q1s[i].get()
-                d_loss = d_model_s2_tr.train_on_batch(x, y)
-                d_losses.append(d_loss)
-
+                try:
+                    x,y = q1s[i].get()
+                    d_loss = d_model_s2_tr.train_on_batch(x, y)
+                    d_losses.append(d_loss)
+                except Exception:
+                    print(f"x={x.shape}")
+                    print(f"y={y.shape}")
             pre_d_loss = sum(d_losses)/3
         print(f'D_loss={pre_d_loss:.3f}  ',end='')
 
         # if pre_d_loss <= pre_g_loss or epoch < 10:
         # 色別にバッチを分けて実施
-        x,y = q2.get()
-        g_loss = combined.train_on_batch(x, y)
+        try:
+            x,y = q2.get()
+            g_loss = combined.train_on_batch(x, y)
+        except Exception:
+            print(f"x={x[0].shape},{x[1].shape}")
+            print(f"y={y[0].shape},{y[1].shape}")
         pre_g_loss = g_loss[1]
         print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})',end='')
 

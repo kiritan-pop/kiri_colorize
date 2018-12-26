@@ -54,13 +54,15 @@ def image_arrange(path, resize=(128,128)):
 
     # アスペクト比維持するように変更
     # img = img.resize(resize, Image.BICUBIC)
-    img.thumbnail(resize,Image.BICUBIC)
+    # img.thumbnail(resize,Image.BICUBIC)
     img = expand2square(img,(255,255,255))
+    img = img.resize(resize, Image.BICUBIC)
     img = img.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
  
     # line = line.resize(resize, Image.BICUBIC)
-    line.thumbnail(resize,Image.BICUBIC)
+    # line.thumbnail(resize,Image.BICUBIC)
     line = expand2square(line,(255,))
+    line = line.resize(resize, Image.BICUBIC)
     line = line.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
 
     if mirror ==0:
@@ -365,7 +367,7 @@ class D_DatageneratorS2():
                     if len(self.old_fake) > 1000:
                         del self.old_fake[random.choice(list(self.old_fake.keys() ))]
 
-            xy.put([x, lines, retvecs, y])
+            xy.put([x, y])
 
         threads = []
         for path in ytmp1:
@@ -380,11 +382,9 @@ class D_DatageneratorS2():
         x = []
         y = []
         while xy.qsize() > 0:
-            a,_,_,d = xy.get()
+            a,b = xy.get()
             x.append(a)
-            # lines.append(b)
-            # retvecs.append(c)
-            y.append(d)
+            y.append(b)
 
         return np.asarray(x), np.asarray(y)
 
@@ -449,15 +449,13 @@ class Comb_DatageneratorS2():
 
         #順序がバラバラにならないように
         x = []
-        # selvecs = []
         s1gen = []
         y = []
         y_imgs = []
         while xy.qsize() > 0:
-            a,e,c,d = xy.get()
+            a,b,c,d = xy.get()
             x.append(a)
-            # selvecs.append(b)
-            s1gen.append(e)
+            s1gen.append(b)
             y.append(c)
             y_imgs.append(d)
 
