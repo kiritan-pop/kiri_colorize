@@ -28,7 +28,9 @@ def image_to_line_open(path):
     tmp = path.split("/")
     tmp[-3] = "line_images"
     line_path = "/".join(tmp)
-    return Image.open(line_path).convert("L")
+    img = Image.open(line_path)
+    img = new_convert(img, "L")
+    return img
 
 def expand2square(pil_img, background_color):
     width, height = pil_img.size
@@ -43,8 +45,20 @@ def expand2square(pil_img, background_color):
         result.paste(pil_img, ((height - width) // 2, 0))
         return result
 
+def new_convert(img, mode):
+    if img.mode == "RGBA":
+        bg = Image.new("RGB", img.size, (255, 255, 255))
+        bg.paste(img, mask=img.split()[3])
+    elif img.mode == "LA":
+        bg = Image.new("L", img.size, (255,))
+        bg.paste(img, mask=img.split()[1])
+    else:
+        bg = img
+    return bg.convert(mode)
+
 def image_arrange(path, resize=(128,128)):
-    img = Image.open(path).convert('RGB')
+    img = Image.open(path)
+    img = new_convert(img, 'RGB')
     #画像加工ランダム値（重いので）
     rotate_rate = random.choice([0,90,180,270]) #回転
     mirror =  random.randint(0,100) % 2
@@ -156,7 +170,7 @@ class D_Datagenerator():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*20)
+                r = random.randint(0, self.batch_size*5)
                 if r == 0:
                     filename = f'temp/gen_{selcol3}.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -351,7 +365,7 @@ class D_DatageneratorS2():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*20)
+                r = random.randint(0,self.batch_size*5)
                 if r == 0:
                     filename = f'temp/gen2.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)

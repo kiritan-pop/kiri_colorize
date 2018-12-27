@@ -15,7 +15,7 @@ import argparse
 from kiri_coloring_model import build_generator, build_discriminator, build_combined, build_frozen_discriminator,\
                                 build_generatorS2, build_discriminatorS2, build_combinedS2
 from kiri_datagenerator import D_Datagenerator, Comb_Datagenerator, Colors, STANDARD_SIZE_S1, STANDARD_SIZE_S2, Colors_rev,\
-                                D_DatageneratorS2, Comb_DatageneratorS2, expand2square
+                                D_DatageneratorS2, Comb_DatageneratorS2, expand2square, new_convert
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
@@ -375,7 +375,7 @@ def generator_test(g_model, test_dir, epoch, result_path, short=False):
     # for image_path in random.sample(i_dirs,min([len(i_dirs),10])):
     for image_path in random.sample(i_dirs,min([len(i_dirs),3])):
         img = Image.open(image_path)
-        img = img.convert('L')
+        img = new_convert(img, "L")
         img = image_resize(img,STANDARD_SIZE_S1)
         img = (np.asarray(img)-127.5)/127.5
         for selcol, colorvec in Colors.items():
@@ -407,13 +407,15 @@ def generator_testS2(g_model_s2, test_dir, epoch, result_path, short=False):
     for f in os.listdir(test_dir):
             i_dirs.append(test_dir + f)
     for image_path in random.sample(i_dirs,min([len(i_dirs),3])):
-        img = Image.open(image_path).convert('L')
+        img = Image.open(image_path)
+        img = new_convert(img, 'L')
         line_s2 = image_resize(img, STANDARD_SIZE_S2)
         # line_s2 = img.resize(STANDARD_SIZE_S2,Image.BICUBIC)
         line_s2 = (np.asarray(line_s2)-127.5)/127.5
         for selcol in Colors.keys():
             gen_image_path = test_dir.rsplit("/",1)[0] + "_colored/" + selcol + "/" + image_path.rsplit("/",1)[-1]
-            gens1 = Image.open(gen_image_path).convert('RGB')
+            gens1 = Image.open(gen_image_path)
+            gens1 = new_convert(gens1, 'RGB')
             gens1 = image_resize(gens1, STANDARD_SIZE_S1)
             # gens1 = gens1.resize(STANDARD_SIZE_S1,Image.BICUBIC)
             gens1 = (np.asarray(gens1)-127.5)/127.5
