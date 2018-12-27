@@ -50,8 +50,8 @@ def build_discriminator():
 def build_generator():
     en_alpha=0.3
     dec_alpha=0.1
-    en_stddev=0.1  # 0でいいかな？
-    de_stddev=0.1  # 0でいいかな？
+    en_stddev=0.0  # 0でいいかな？
+    de_stddev=0.0  # 0でいいかな？
     en_d_out=0.0   # エンコードのみにしたらどうだろう？
     de_d_out=0.0   # 
     input_label = Input(shape=(1,), name="g_s1_input_label")
