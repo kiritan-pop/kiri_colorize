@@ -365,7 +365,7 @@ class D_DatageneratorS2():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*5)
+                r = random.randint(0,self.batch_size*9*5)
                 if r == 0:
                     filename = f'temp/gen2.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
