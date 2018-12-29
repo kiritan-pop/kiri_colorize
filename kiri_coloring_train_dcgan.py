@@ -61,18 +61,20 @@ def dataQ(generator, queue_size=5, MP=False):
     return que
 
 def gan_s1(GPUs, start_idx, batch_size):
-    def g_on_epoch_end(epoch):
+    def g_on_epoch_end(epoch, path):
         g_model_s1.save(g_model_s1_path)
+        g_model_s1.save(path + g_model_s1_path)
         # g_model_s1.save_weights(g_model_s1_path)
-        generator_test(g_model_s1, test_dir, epoch, result_path)
+        generator_test(g_model_s1, test_dir, epoch, path)
 
     def g_on_epoch_end_sub(epoch):
         generator_test(g_model_s1, test_short_dir, epoch, None, True)
 
-    def d_on_epoch_end(epoch):
+    def d_on_epoch_end(epoch, path):
         d_model_s1.save(d_model_s1_path)
+        d_model_s1.save(path + d_model_s1_path)
         # d_model_s1.save_weights(d_model_s1_path)
-        discrimin_test(d_model_s1, epoch, result_path, q_valid_d)
+        discrimin_test(d_model_s1, epoch, path, q_valid_d)
 
     #######################################################
     # STAGE-1
@@ -204,21 +206,23 @@ def gan_s1(GPUs, start_idx, batch_size):
             if not os.path.exists(result_path):
                 os.mkdir(result_path)
 
-            g_on_epoch_end(epoch)
-            d_on_epoch_end(epoch)
+            g_on_epoch_end(epoch, result_path)
+            d_on_epoch_end(epoch, result_path)
 
 
 def gan_s2(GPUs, start_idx, batch_size):
-    def g_on_epoch_end(epoch):
+    def g_on_epoch_end(epoch, path):
         g_model_s2.save(g_model_s2_path)
-        generator_testS2(g_model_s2_tr, test_dir, epoch, result_path)
+        g_model_s2.save(path + g_model_s2_path)
+        generator_testS2(g_model_s2_tr, test_dir, epoch, path)
 
     def g_on_epoch_end_sub(epoch):
         generator_testS2(g_model_s2_tr, test_short_dir, epoch, None, True)
 
-    def d_on_epoch_end(epoch):
+    def d_on_epoch_end(epoch, path):
         d_model_s2.save(d_model_s2_path)
-        discrimin_testS2(d_model_s2_tr, epoch, result_path, q_valid_d)
+        d_model_s2.save(path + d_model_s2_path)
+        discrimin_testS2(d_model_s2_tr, epoch, path, q_valid_d)
 
     #######################################################
     # STAGE-2

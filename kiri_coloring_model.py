@@ -51,9 +51,9 @@ def build_generator():
     en_alpha=0.3
     dec_alpha=0.1
     en_stddev=0.0  # 0でいいかな？
-    de_stddev=0.0  # 0でいいかな？
+    de_stddev=0.1  # 0でいいかな？
     en_d_out=0.0   # エンコードのみにしたらどうだろう？
-    de_d_out=0.0   # 
+    de_d_out=0.2   # 
     input_label = Input(shape=(1,), name="g_s1_input_label")
     label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
     label = Reshape(target_shape=(1, 1, 3))(label)
@@ -213,20 +213,8 @@ def build_generatorS2():
     line = Reshape(target_shape=(512, 512, 1))(input_line)
 
     input_color = Input(shape=(128, 128, 3), name="g_s2_input_color")
-    # color = UpSampling2D(size=(4, 4))(input_color) #128
-    color = GaussianNoise(0.2)(input_color)
-    color = Conv2DTranspose(filters=64, kernel_size=4, strides=2, padding='same')(color) 
-    color = BatchNormalization(momentum=0.8)(color)
-    color = LeakyReLU(alpha=dec_alpha)(color)
-    color = Conv2D(filters=64,  kernel_size=3, strides=1, padding='same')(color)
-    color = BatchNormalization(momentum=0.8)(color)
-    color = LeakyReLU(alpha=en_alpha)(color)
-    color = Conv2DTranspose(filters=32, kernel_size=4, strides=2, padding='same')(color) 
-    color = BatchNormalization(momentum=0.8)(color)
-    color = LeakyReLU(alpha=dec_alpha)(color)
-    color = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(color)
-    color = BatchNormalization(momentum=0.8)(color)
-    color = LeakyReLU(alpha=en_alpha)(color)
+    color = UpSampling2D(size=(4, 4))(input_color) #128
+    color = GaussianNoise(0.2)(color)
 
     model = Concatenate()([line, color])
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
