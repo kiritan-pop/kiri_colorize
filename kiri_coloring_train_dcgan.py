@@ -109,7 +109,7 @@ def gan_s1(GPUs, start_idx, batch_size):
                     # optimizer=Adam(lr=2e-5) #, beta_1=0.5) #, decay=1e-5)
                     # optimizer=Adam(lr=1e-4), #1e-4でよさそう Nadam
                     # optimizer=Adadelta(),
-                    optimizer=Nadam(),
+                    optimizer=Nadam(lr=1e-4),
                     )
     with open('d_model_s1.txt', 'w') as f:
         d_model_s1.summary(print_fn=summary_write)
@@ -128,7 +128,7 @@ def gan_s1(GPUs, start_idx, batch_size):
                     # optimizer=Adam(lr=1e-4) #, beta_1=0.5) #, decay=1e-5),
                     # optimizer=Adam(lr=1e-4),  #1e-4でよさそう
                     # optimizer=Adadelta(),
-                    optimizer=Nadam(),
+                    optimizer=Nadam(lr=1e-4),
                     )
 
     #
@@ -260,7 +260,7 @@ def gan_s2(GPUs, start_idx, batch_size):
     else:
         d_model_s2_tr = d_model_s2
     d_model_s2_tr.compile(loss='categorical_crossentropy',
-                    optimizer=Nadam(),
+                    optimizer=Nadam(lr=1e-4),
                     )
     with open('d_model_s2.txt', 'w') as f:
         d_model_s2.summary(print_fn=summary_write)
@@ -275,7 +275,7 @@ def gan_s2(GPUs, start_idx, batch_size):
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'], 
                     loss_weights=[1.0, 0.1],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
-                    optimizer=Nadam(),
+                    optimizer=Nadam(lr=1e-4),
                     )
 
     #
@@ -359,8 +359,8 @@ def gan_s2(GPUs, start_idx, batch_size):
             if not os.path.exists(result_path):
                 os.mkdir(result_path)
 
-            g_on_epoch_end(epoch)
-            d_on_epoch_end(epoch)
+            g_on_epoch_end(epoch, result_path)
+            d_on_epoch_end(epoch, result_path)
 
 def image_resize(img, resize):
     # アスペクト比維持
