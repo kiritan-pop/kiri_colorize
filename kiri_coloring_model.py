@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Input, Dense, Dropout, Activation, GlobalAve
 
 def build_discriminator():
     en_alpha=0.3
-    stddev=0.15 #0.2でいいかな？
+    stddev=0.1 #0.2でいいかな？
 
     input_label = Input(shape=(1,), name="d_s1_input_label")
     label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
@@ -50,10 +50,10 @@ def build_discriminator():
 def build_generator():
     en_alpha=0.3
     dec_alpha=0.1
-    en_stddev=0.0  # 0でいいかな？
-    de_stddev=0.1  # 0でいいかな？
-    en_d_out=0.0   # エンコードのみにしたらどうだろう？
-    de_d_out=0.2   # 
+    en_stddev=0.1  # 0でいいかな？
+    de_stddev=0.0  # 0でいいかな？
+    en_d_out=0.3   # エンコードのみにしたらどうだろう？
+    de_d_out=0.0   # 
     input_label = Input(shape=(1,), name="g_s1_input_label")
     label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
     label = Reshape(target_shape=(1, 1, 3))(label)

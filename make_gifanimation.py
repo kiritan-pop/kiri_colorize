@@ -32,7 +32,7 @@ if __name__ == "__main__":
     for p in image_dir_list:
         for f in os.listdir(p):
             for c in Colors.keys():
-                if c in f and TARGET_FILE.split(".")[0] + "_" + c + "." + TARGET_FILE.split(".")[-1] in f:
+                if c in f and TARGET_FILE.split(".")[0] + "_" + c + "." + TARGET_FILE.split(".")[-1] in f and "testgen1" in f:
                     Colors[c].append(p + f)
 
     ani_images = []

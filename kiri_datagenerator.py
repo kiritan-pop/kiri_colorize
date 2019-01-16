@@ -79,11 +79,20 @@ def image_arrange(path, resize=(128,128)):
     line = line.resize(resize, Image.BICUBIC)
     line = line.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
 
+    tmp = "gen1_images/" + "/".join(path.split("/")[2:])
+    if os.path.exists(tmp):
+        img_small = Image.open(tmp)
+        img_small = img_small.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+    else:
+        img_small = None
+
     if mirror ==0:
         img = ImageOps.mirror(img)
         line = ImageOps.mirror(line)
+        if img_small:
+            img_small = ImageOps.mirror(img_small)
 
-    return img, line
+    return img, line, img_small
 
 
 class D_Datagenerator():
@@ -118,7 +127,7 @@ class D_Datagenerator():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, _ = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
 
@@ -249,7 +258,7 @@ class Comb_Datagenerator():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, _ = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             color_name = path.split("/")[-2]
@@ -324,8 +333,9 @@ class D_DatageneratorS2():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line = image_arrange(path, resize=STANDARD_SIZE_S2)
-            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
+            # img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            # img_small = Image.open("gen1_images/" + "/".join(path.split("/")[1:]))
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
@@ -342,8 +352,8 @@ class D_DatageneratorS2():
             if rand%2 == 0:
                 #本物
                 x = img
-                retvecs = selvec
-                lines = line
+                # retvecs = selvec
+                # lines = line
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([1.0 - r, 0.0 + r])
 
@@ -360,8 +370,8 @@ class D_DatageneratorS2():
                         ret = self.g_model.predict_on_batch([np.array([line]), np.array([img_small])])
                     x = ret[0]
 
-                retvecs = selvec3
-                lines = line
+                # retvecs = selvec3
+                # lines = line
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
@@ -440,9 +450,10 @@ class Comb_DatageneratorS2():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line = image_arrange(path, resize=STANDARD_SIZE_S2)
-            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-            img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.5)) )
+            img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
+            # img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            # img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.5)) )
+            # img_small = Image.open("gen1_images/" + "/".join(path.split("/")[1:]))
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
