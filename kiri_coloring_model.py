@@ -166,7 +166,8 @@ def build_combined(generator, discriminator):
 
 def build_discriminatorS2():
     en_alpha=0.3
-    stddev=0.15 #0.2でいいかな？
+    stddev=0.2 #0.2でいいかな？
+    d_out=0.3
 
     input_image = Input(shape=(512, 512, 3), name="d_s2_input_image")
     model = GaussianNoise(stddev)(input_image)
@@ -176,26 +177,46 @@ def build_discriminatorS2():
     model = Conv2D(filters=64,  kernel_size=4, strides=2, padding='same')(model) # >64
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
+    GAP1 = GlobalAveragePooling2D()(model)
 
+    model = Dropout(d_out)(model)
     model = Conv2D(filters=64,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
     model = Conv2D(filters=128, kernel_size=4, strides=2, padding='same')(model) # >32
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
+    GAP2 = GlobalAveragePooling2D()(model)
 
+    model = Dropout(d_out)(model)
     model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
+    model = BatchNormalization(momentum=0.8)(model)
+    model = LeakyReLU(alpha=en_alpha)(model)
+    model = Conv2D(filters=160,  kernel_size=4, strides=2, padding='same')(model) # >16
+    model = BatchNormalization(momentum=0.8)(model)
+    model = LeakyReLU(alpha=en_alpha)(model)
+    GAP3 = GlobalAveragePooling2D()(model)
+
+    model = Dropout(d_out)(model)
+    model = Conv2D(filters=160,  kernel_size=3, strides=1, padding='same')(model)
+    model = BatchNormalization(momentum=0.8)(model)
+    model = LeakyReLU(alpha=en_alpha)(model)
+    model = Conv2D(filters=192,  kernel_size=4, strides=2, padding='same')(model) # >16
+    model = BatchNormalization(momentum=0.8)(model)
+    model = LeakyReLU(alpha=en_alpha)(model)
+    GAP4 = GlobalAveragePooling2D()(model)
+
+    model = Dropout(d_out)(model)
+    model = Conv2D(filters=192,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
     model = Conv2D(filters=256,  kernel_size=4, strides=2, padding='same')(model) # >16
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
+    GAP5 = GlobalAveragePooling2D()(model)
 
-    model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
-    model = BatchNormalization(momentum=0.8)(model)
-    model = LeakyReLU(alpha=en_alpha)(model)
-
-    model = GlobalAveragePooling2D()(model)
+    model = Concatenate()([GAP1, GAP2, GAP3, GAP4, GAP5])
+    model = GaussianNoise(stddev)(model)
     model = Dense(2)(model)
     truefake = Activation('softmax', name="d_s2_out1_trfk")(model)
     return Model(inputs=[input_image], outputs=[truefake])
@@ -205,18 +226,36 @@ def build_generatorS2():
     en_alpha=0.3
     dec_alpha=0.1
     en_stddev=0.1  # 0でいいかな？
-    de_stddev=0.1  # 0でいいかな？
-    en_d_out=0.0   # エンコードのみにしたらどうだろう？
+    de_stddev=0.0  # 0でいいかな？
+    en_d_out=0.3   # エンコードのみにしたらどうだろう？
     de_d_out=0.0   # 
 
     input_line = Input(shape=(512, 512), name="g_s2_input_line")
     line = Reshape(target_shape=(512, 512, 1))(input_line)
 
     input_color = Input(shape=(128, 128, 3), name="g_s2_input_color")
-    color = UpSampling2D(size=(4, 4))(input_color) #128
-    color = GaussianNoise(0.2)(color)
+    color = GaussianNoise(0.1)(input_color)
+    color = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(color)
+    color = BatchNormalization(momentum=0.8)(color)
+    color = LeakyReLU(alpha=en_alpha)(color)
 
-    model = Concatenate()([line, color])
+    # color = UpSampling2D(size=(4, 4))(input_color) #128
+    # color = GaussianNoise(0.1)(color)
+
+    # color = GaussianNoise(0.1)(input_color)
+    # color = Conv2DTranspose(filters=64, kernel_size=4, strides=2, padding='same')(color) #8->16
+    # color = BatchNormalization(momentum=0.8)(color)
+    # color = LeakyReLU(alpha=dec_alpha)(color)
+    # color = Conv2DTranspose(filters=32, kernel_size=4, strides=2, padding='same')(color) #8->16
+    # color = BatchNormalization(momentum=0.8)(color)
+    # color = LeakyReLU(alpha=dec_alpha)(color)
+    # color = Dropout(en_d_out)(color)
+    # color = Conv2D(filters=3,  kernel_size=3, strides=1, padding='same')(color)
+    # color = BatchNormalization(momentum=0.8)(color)
+    # color = LeakyReLU(alpha=en_alpha)(color)
+
+    # model = Concatenate()([line, color])
+    model = line
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -237,8 +276,9 @@ def build_generatorS2():
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
 
+    model = Concatenate()([model, color])
     model = GaussianNoise(en_stddev)(model)
-    model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
+    model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
     e32 = model

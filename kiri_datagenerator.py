@@ -311,7 +311,7 @@ class D_DatageneratorS2():
                 self.color_images.append(color_path + p + '/' + f)
         random.shuffle(self.color_images)
         self.val = val
-        self.valid_images = random.sample(self.color_images,batch_size)
+        self.valid_images = random.sample(self.color_images,batch_size*18)
         for d in self.valid_images:
             self.color_images.remove(d)
         self.g_model = g_model
@@ -334,8 +334,8 @@ class D_DatageneratorS2():
 
         def func(path):
             img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
-            # img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-            # img_small = Image.open("gen1_images/" + "/".join(path.split("/")[1:]))
+            if random.randint(0,100) % 2 == 0:
+                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
@@ -375,14 +375,22 @@ class D_DatageneratorS2():
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
 
-                r = random.randint(0,self.batch_size*9*5)
+                r = random.randint(0,self.batch_size*20)
                 if r == 0:
                     filename = f'temp/gen2.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
-                    filename = f'temp/gen2_in.png'
+                    filename = f'temp/gen2_in_line.png'
                     tmp = (line*127.5+127.5).clip(0, 255).astype(np.uint8)
+                    Image.fromarray(tmp).save(filename,'png', optimize=True)
+
+                    filename = f'temp/gen2_in_gen1.png'
+                    tmp = (img_small*127.5+127.5).clip(0, 255).astype(np.uint8)
+                    Image.fromarray(tmp).save(filename,'png', optimize=True)
+
+                    filename = f'temp/gen2_true.png'
+                    tmp = (img*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
                     #偽物画像を保存しておく（次のDiscriminater用の学習へ）
@@ -432,7 +440,7 @@ class Comb_DatageneratorS2():
             for f in os.listdir(color_path + p + '/'):
                 tmp.append(color_path + p + '/' + f)
 
-            valid_tmp = random.sample(tmp, math.ceil(batch_size/len(Colors)))
+            valid_tmp = random.sample(tmp, batch_size*2)
             self.valid_images.extend(valid_tmp)
             for d in valid_tmp:
                 tmp.remove(d)
@@ -451,14 +459,16 @@ class Comb_DatageneratorS2():
         xy  = queue.Queue()
         def func(path):
             img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
-            # img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-            # img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.5)) )
-            # img_small = Image.open("gen1_images/" + "/".join(path.split("/")[1:]))
+            if random.randint(0,100) % 2 == 0:
+                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+                img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.2, 0.4)) )
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
 
-            y = [1.0, 0.0]
+            r = random.uniform(0.0, 0.2)
+            y = [1.0 - r, 0.0 + r]
+            # y = [1.0, 0.0]
 
             xy.put([line, img_small, y, img])
 
