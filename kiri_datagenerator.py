@@ -26,7 +26,13 @@ Colors_rev = {v:k for k,v in Colors.items()}
 
 def image_to_line_open(path):
     tmp = path.split("/")
-    tmp[-3] = "line_images"
+    r = random.randint(0,100)%3
+    if r == 0:
+        tmp[-3] = "line_images"
+    elif r == 1:
+        tmp[-3] = "line_images2"
+    else:
+        tmp[-3] = "line_images3"
     line_path = "/".join(tmp)
     img = Image.open(line_path)
     img = new_convert(img, "L")
@@ -92,7 +98,9 @@ def image_arrange(path, resize=(128,128)):
         if img_small:
             img_small = ImageOps.mirror(img_small)
 
-    return img, line, img_small
+    col = Colors[path.split("/")[-2]]
+
+    return img, line, img_small, col
 
 
 class D_Datagenerator():
@@ -127,7 +135,7 @@ class D_Datagenerator():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line, _ = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, _ , selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
 
@@ -137,8 +145,8 @@ class D_Datagenerator():
             else:
                 rand = self.val
 
-            selcol = path.split('/')[-2]
-            selvec = Colors[selcol]
+            # selcol = path.split('/')[-2]
+            # selvec = Colors[selcol]
 
             if rand%3 == 0:
                 #本物
@@ -152,10 +160,9 @@ class D_Datagenerator():
                 #本物だけど、色間違い
                 x = img
                 # カラーラベルランダム取得（正解以外）
-                tmpcol = list(Colors.keys())
-                tmpcol.remove(selcol) 
-                selcol2 = random.choice(tmpcol)
-                selvec2 = Colors[selcol2]
+                tmpcol = list(Colors.values())
+                tmpcol.remove(selvec) 
+                selvec2 = random.choice(tmpcol)
                 retvecs = selvec2
                 lines = line
                 r = random.uniform(0.0, 0.2)
@@ -258,14 +265,11 @@ class Comb_Datagenerator():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line, _ = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, _, selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
-            color_name = path.split("/")[-2]
-            selvec = Colors[color_name]
 
-            # r = random.uniform(0.0, 0.2)
-            r = 0
+            r = random.uniform(0.0, 0.2)
             y = [1.0 - r, 0.0 + r]
 
             xy.put([line, selvec, y, img])
@@ -321,7 +325,7 @@ class D_DatageneratorS2():
         img_s = np.zeros((STANDARD_SIZE_S1[0],STANDARD_SIZE_S1[1],3))
         img = np.zeros((STANDARD_SIZE_S2[0],STANDARD_SIZE_S2[1]))
         with graph.as_default():
-            g_model.predict_on_batch([np.array([img]), np.array([img_s])])
+            g_model.predict_on_batch([np.array([img]), np.array([img_s]), np.array([0])])
         sleep(2)
 
     def __getitem__(self, idx):
@@ -333,7 +337,7 @@ class D_DatageneratorS2():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
+            img, line, img_small, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
             if random.randint(0,100) % 2 == 0:
                 img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
             line = (np.asarray(line)-127.5)/127.5
@@ -346,31 +350,38 @@ class D_DatageneratorS2():
             else:
                 rand = self.val
 
-            selcol = path.split('/')[-2]
-            selvec = Colors[selcol]
-
-            if rand%2 == 0:
+            if rand%3 == 0:
                 #本物
                 x = img
-                # retvecs = selvec
+                retvecs = selvec
                 # lines = line
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([1.0 - r, 0.0 + r])
 
+            elif rand%3 == 1:
+                #本物だけど、色間違い
+                x = img
+                # カラーラベルランダム取得（正解以外）
+                tmpcol = list(Colors.values())
+                tmpcol.remove(selvec) 
+                selvec2 = random.choice(tmpcol)
+                retvecs = selvec2
+                lines = line
+                r = random.uniform(0.0, 0.2)
+                y = np.asarray([0.0 + r, 1.0 - r])
+
             else:
                 #偽物
-                selcol3 = random.choice(list(Colors.keys()))
-                selvec3 = Colors[selcol3]
 
                 if random.randint(0,10) == 0 and path in self.old_fake:
                     #過去の生成画像を使用する
                     x = self.old_fake[path]
                 else:
                     with graph.as_default():
-                        ret = self.g_model.predict_on_batch([np.array([line]), np.array([img_small])])
+                        ret = self.g_model.predict_on_batch([np.array([line]), np.array([img_small]), np.array([selvec])])
                     x = ret[0]
 
-                # retvecs = selvec3
+                retvecs = selvec
                 # lines = line
                 r = random.uniform(0.0, 0.2)
                 y = np.asarray([0.0 + r, 1.0 - r])
@@ -399,7 +410,7 @@ class D_DatageneratorS2():
                     if len(self.old_fake) > 1000:
                         del self.old_fake[random.choice(list(self.old_fake.keys() ))]
 
-            xy.put([x, y])
+            xy.put([x, selvec, y])
 
         threads = []
         for path in ytmp1:
@@ -412,13 +423,15 @@ class D_DatageneratorS2():
 
         #順序がバラバラにならないように
         x = []
+        col = []
         y = []
         while xy.qsize() > 0:
-            a,b = xy.get()
+            a,v,b = xy.get()
             x.append(a)
+            col.append(v)
             y.append(b)
 
-        return np.asarray(x), np.asarray(y)
+        return [np.asarray(x), np.asarray(col)], np.asarray(y)
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！
@@ -458,10 +471,9 @@ class Comb_DatageneratorS2():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line, img_small = image_arrange(path, resize=STANDARD_SIZE_S2)
-            if random.randint(0,100) % 2 == 0:
-                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-                img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.2, 0.4)) )
+            img, line, _, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
+            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.2, 0.3)) )
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
@@ -470,7 +482,7 @@ class Comb_DatageneratorS2():
             y = [1.0 - r, 0.0 + r]
             # y = [1.0, 0.0]
 
-            xy.put([line, img_small, y, img])
+            xy.put([line, img_small, selvec, y, img])
 
         threads = []
         for path in ytmp1:
@@ -485,16 +497,18 @@ class Comb_DatageneratorS2():
         #順序がバラバラにならないように
         x = []
         s1gen = []
+        col = []
         y = []
         y_imgs = []
         while xy.qsize() > 0:
-            a,b,c,d = xy.get()
+            a,b,v,c,d = xy.get()
             x.append(a)
             s1gen.append(b)
+            col.append(v)
             y.append(c)
             y_imgs.append(d)
 
-        return [np.asarray(x), np.asarray(s1gen)], [np.asarray(y), np.asarray(y_imgs)]
+        return [np.asarray(x), np.asarray(s1gen), np.asarray(col)], [np.asarray(y), np.asarray(y_imgs)]
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！

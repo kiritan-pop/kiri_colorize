@@ -289,7 +289,7 @@ def gan_s2(GPUs, start_idx, batch_size):
     # discriminator用のデータジェネレータ、データを格納するキュー
     ddgens = []
     q1s = []
-    for i in range(2):
+    for i in range(3):
         ddgen = D_DatageneratorS2(color_path=img_dir, batch_size=batch_size, g_model=g_model_s2_tr ,val=i)
         q1 = dataQ(ddgen, args.queue_size)
         ddgens.append(ddgen)
@@ -315,7 +315,7 @@ def gan_s2(GPUs, start_idx, batch_size):
         print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
         if pre_d_loss * 1.2 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
             d_losses = []
-            for i in range(2):
+            for i in range(3):
                 try:
                     x,y = q1s[i].get()
                     d_loss = d_model_s2_tr.train_on_batch(x, y)
@@ -326,8 +326,6 @@ def gan_s2(GPUs, start_idx, batch_size):
             pre_d_loss = sum(d_losses)/3
         print(f'D_loss={pre_d_loss:.3f}  ',end='')
 
-        # if pre_d_loss <= pre_g_loss or epoch < 10:
-        # 色別にバッチを分けて実施
         try:
             x,y = q2.get()
             g_loss = combined.train_on_batch(x, y)
@@ -416,14 +414,14 @@ def generator_testS2(g_model_s2, test_dir, epoch, result_path, short=False):
         line_s2 = image_resize(img, STANDARD_SIZE_S2)
         # line_s2 = img.resize(STANDARD_SIZE_S2,Image.BICUBIC)
         line_s2 = (np.asarray(line_s2)-127.5)/127.5
-        for selcol in Colors.keys():
+        for selcol,selvec in Colors.items():
             gen_image_path = test_dir.rsplit("/",1)[0] + "_colored/" + selcol + "/" + image_path.rsplit("/",1)[-1]
             gens1 = Image.open(gen_image_path)
             gens1 = new_convert(gens1, 'RGB')
             # gens1 = image_resize(gens1, STANDARD_SIZE_S1)
             # gens1 = gens1.resize(STANDARD_SIZE_S1,Image.BICUBIC)
             gens1 = (np.asarray(gens1)-127.5)/127.5
-            ret = g_model_s2.predict_on_batch([np.array([line_s2]), np.array([gens1]) ])
+            ret = g_model_s2.predict_on_batch([np.array([line_s2]), np.array([gens1]), np.array([selvec]) ])
 
             if short:
                 exet = image_path.rsplit('.',1)[-1]
@@ -476,7 +474,7 @@ def discrimin_testS2(d_model, epoch, result_path, queue, stage=2):
     for i in range(results.shape[0]):
     # for i,(img,num,result) in enumerate(zip(imgs,colvecs,results)):
         filename = f'd{i:02}[{results[i,0]:1.2f}][{results[i,1]:1.2f}].png'
-        tmp = (imgs[i]*127.5+127.5).clip(0, 255).astype(np.uint8)
+        tmp = (imgs[0][i]*127.5+127.5).clip(0, 255).astype(np.uint8)
         Image.fromarray(tmp).save(save_path + filename, 'png', optimize=True)
 
 

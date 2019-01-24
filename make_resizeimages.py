@@ -7,7 +7,30 @@ import numpy as np
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 color_dir = './class_col/'
-line_dir = './line_images3/'
+resize_dir = './class_col_rs/'
+
+def expand2square(pil_img, background_color):
+    width, height = pil_img.size
+    if width == height:
+        return pil_img
+    elif width > height:
+        result = Image.new(pil_img.mode, (width, width), background_color)
+        result.paste(pil_img, (0, (width - height) // 2))
+        return result
+    else:
+        result = Image.new(pil_img.mode, (height, height), background_color)
+        result.paste(pil_img, ((height - width) // 2, 0))
+        return result
+
+def image_resize(img, resize):
+    # アスペクト比維持
+    tmp = img.copy()
+    if tmp.mode == 'L':
+        tmp = expand2square(tmp,(255,))
+    else:
+        tmp = expand2square(tmp,(255,255,255))
+    return tmp.resize(resize,Image.BICUBIC)
+
 
 def new_convert(img, mode):
     if img.mode == "RGBA":
@@ -21,23 +44,6 @@ def new_convert(img, mode):
     return bg.convert(mode)
 
 
-def image_to_line(img): # img:RGBモード
-    # 線画化
-    gray = new_convert(img, "L") #グレイスケール
-    gray2 = gray.filter(ImageFilter.MaxFilter(3))
-    senga_inv = ImageChops.difference(gray, gray2)
-    senga_inv = ImageOps.invert(senga_inv)
-    senga_inv = senga_inv.filter(ImageFilter.MinFilter(3))
-    # senga_inv = senga_inv.filter(ImageFilter.MaxFilter(3))
-
-    return senga_inv
-
-def image_to_line2(img): # img:RGBモード
-    # 線画化
-    gray = new_convert(img, "L") #グレイスケール
-    gray2 = gray.filter(ImageFilter.CONTOUR)
-    return gray2
-
 def image_to_line_prc(num,readQ):
     print(f'--Process({num}) start')
     cnt = 0
@@ -45,8 +51,9 @@ def image_to_line_prc(num,readQ):
         while True:
             img, output_path = readQ.get(timeout=10) #キューからトゥートを取り出すよー！
             img = Image.fromarray(img)
-            line = image_to_line(img)
-            line.save(output_path, optimize=True)
+            img = new_convert(img, "RGB")
+            img = image_resize(img, (512,512))
+            img.save(output_path, optimize=True)
             cnt += 1
             if cnt%100 == 0:
                 print(f'--executing image_to_line({num}) {cnt}images--')
@@ -61,7 +68,7 @@ def reader(readQ):
     for p in os.listdir(color_dir):
         for f in os.listdir(color_dir + p + '/'):
             input_path = color_dir + p + '/' + f
-            output_path = line_dir + p + '/' + f
+            output_path = resize_dir + p + '/' + f
             if not os.path.exists(output_path):
                 img = Image.open(input_path)
                 img = np.asarray(img, dtype=np.uint8)
@@ -76,12 +83,12 @@ if __name__ == "__main__":
     if not os.path.exists(color_dir):
         exit()
 
-    if not os.path.exists(line_dir):
-        os.mkdir(line_dir)
+    if not os.path.exists(resize_dir):
+        os.mkdir(resize_dir)
 
     for p in os.listdir(color_dir):
-        if not os.path.exists(line_dir + p + '/'):
-            os.mkdir(line_dir + p)
+        if not os.path.exists(resize_dir + p + '/'):
+            os.mkdir(resize_dir + p)
 
     readQ = Queue()
 
