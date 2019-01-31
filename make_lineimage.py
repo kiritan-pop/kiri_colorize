@@ -7,7 +7,7 @@ import numpy as np
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 color_dir = './class_col/'
-line_dir = './line_images3/'
+line_dir = './line_images5/'
 
 def new_convert(img, mode):
     if img.mode == "RGBA":
@@ -23,19 +23,23 @@ def new_convert(img, mode):
 
 def image_to_line(img): # img:RGBモード
     # 線画化
-    gray = new_convert(img, "L") #グレイスケール
-    gray2 = gray.filter(ImageFilter.MaxFilter(3))
+    gray = new_convert(img, "RGB") #グレイスケール
+    gray2 = gray.filter(ImageFilter.MaxFilter(5))
     senga_inv = ImageChops.difference(gray, gray2)
     senga_inv = ImageOps.invert(senga_inv)
-    senga_inv = senga_inv.filter(ImageFilter.MinFilter(3))
-    # senga_inv = senga_inv.filter(ImageFilter.MaxFilter(3))
 
+    senga_inv = new_convert(senga_inv, "L") #グレイスケール
+    # senga_inv = senga_inv.filter(ImageFilter.MinFilter(3))
+    # en = ImageEnhance.Contrast(senga_inv)
+    # senga_inv = en.enhance(3.0)
+    # senga_inv = senga_inv.filter(ImageFilter.MaxFilter(3))
     return senga_inv
 
 def image_to_line2(img): # img:RGBモード
     # 線画化
-    gray = new_convert(img, "L") #グレイスケール
+    gray = new_convert(img, "RGB") #グレイスケール
     gray2 = gray.filter(ImageFilter.CONTOUR)
+    gray2 = new_convert(gray2, "L") #グレイスケール
     return gray2
 
 def image_to_line_prc(num,readQ):
@@ -76,12 +80,8 @@ if __name__ == "__main__":
     if not os.path.exists(color_dir):
         exit()
 
-    if not os.path.exists(line_dir):
-        os.mkdir(line_dir)
-
     for p in os.listdir(color_dir):
-        if not os.path.exists(line_dir + p + '/'):
-            os.mkdir(line_dir + p)
+        os.makedirs(os.path.join(line_dir,p), exist_ok=True)
 
     readQ = Queue()
 

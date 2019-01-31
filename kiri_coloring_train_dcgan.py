@@ -274,8 +274,8 @@ def gan_s2(GPUs, start_idx, batch_size):
         combined = _tmpmdl
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'], 
-                    loss_weights=[1.0, 0.1],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
-                    optimizer=Nadam(lr=1e-4),
+                    loss_weights=[1.0, 0.2],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
+                    optimizer=Nadam(lr=2e-4),
                     )
 
     #
@@ -313,7 +313,7 @@ def gan_s2(GPUs, start_idx, batch_size):
     pre_g_loss = 1000.0
     for epoch in range(start_idx+1, total_epochs+1):
         print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
-        if pre_d_loss * 1.2 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
+        if pre_d_loss * 2 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
             d_losses = []
             for i in range(3):
                 try:

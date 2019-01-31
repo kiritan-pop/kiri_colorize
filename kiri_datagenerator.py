@@ -26,11 +26,15 @@ Colors_rev = {v:k for k,v in Colors.items()}
 
 def image_to_line_open(path):
     tmp = path.split("/")
-    r = random.randint(0,100)%3
+    r = random.randint(0,100)%5
     if r == 0:
         tmp[-3] = "line_images"
     elif r == 1:
         tmp[-3] = "line_images2"
+    elif r == 2:
+        tmp[-3] = "line_images4"
+    elif r == 3:
+        tmp[-3] = "line_images5"
     else:
         tmp[-3] = "line_images3"
     line_path = "/".join(tmp)
@@ -66,29 +70,23 @@ def image_arrange(path, resize=(128,128)):
     img = Image.open(path)
     img = new_convert(img, 'RGB')
     #画像加工ランダム値（重いので）
-    rotate_rate = random.choice([0,90,180,270]) #回転
+    rotate_rate = random.randint(0,360) #回転
     mirror =  random.randint(0,100) % 2
 
     #線画（線画化してからリサイズ）
     line = image_to_line_open(path)
 
     # アスペクト比維持するように変更
-    # img = img.resize(resize, Image.BICUBIC)
-    # img.thumbnail(resize,Image.BICUBIC)
-    img = expand2square(img,(255,255,255))
     img = img.resize(resize, Image.BICUBIC)
-    img = img.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+    img = img.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
  
-    # line = line.resize(resize, Image.BICUBIC)
-    # line.thumbnail(resize,Image.BICUBIC)
-    line = expand2square(line,(255,))
     line = line.resize(resize, Image.BICUBIC)
-    line = line.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+    line = line.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
 
     tmp = "gen1_images/" + "/".join(path.split("/")[2:])
     if os.path.exists(tmp):
         img_small = Image.open(tmp)
-        img_small = img_small.rotate(rotate_rate, expand=False, resample=Image.NEAREST)
+        img_small = img_small.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
     else:
         img_small = None
 
@@ -139,14 +137,10 @@ class D_Datagenerator():
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
 
-            # rand = random.randint(0,100)    # BartchNormalization しない場合はこっち
             if self.val == 999:
                 rand = random.randint(0,1000) 
             else:
                 rand = self.val
-
-            # selcol = path.split('/')[-2]
-            # selvec = Colors[selcol]
 
             if rand%3 == 0:
                 #本物
@@ -225,7 +219,6 @@ class D_Datagenerator():
             retvecs.append(c)
             y.append(d)
 
-        # return [np.asarray(x), np.asarray(lines), np.asarray(retvecs)], np.asarray(y)
         return [np.asarray(x), np.asarray(retvecs)], np.asarray(y)
 
     def __len__(self):
@@ -471,9 +464,10 @@ class Comb_DatageneratorS2():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line, _, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
-            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-            img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.2, 0.3)) )
+            img, line, img_small, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
+            if random.randint(0,100) % 3 != 0:
+                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+                img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.1)) )
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
