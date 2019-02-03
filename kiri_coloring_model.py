@@ -98,20 +98,19 @@ def build_generator():
     model = LeakyReLU(alpha=en_alpha)(model)
     e16 = model
 
-    # model = Dropout(en_d_out)(model)
     model = Conv2D(filters=512, kernel_size=4, strides=2, padding='same')(model) # 16-> 8
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
     e8 = model
 
     model = Concatenate()([model,label])
-    # model = GaussianNoise(en_stddev)(model)
+    model = Dropout(0.4)(model)
     model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
 
     model = Concatenate()([model,e8])   # 順序はあまり影響しないかな
-    model = Dropout(0.3)(model)
+    model = GaussianNoise(0.2)(model)
     model = Conv2DTranspose(filters=512, kernel_size=4, strides=2, padding='same')(model) #8->16
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=dec_alpha)(model)
@@ -164,11 +163,6 @@ def build_combined(generator, discriminator):
 def build_discriminatorS2():
     en_alpha=0.3
 
-    input_label = Input(shape=(1,))
-    label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
-    label = Reshape(target_shape=(1, 1, 3))(label)
-    label = UpSampling2D(size=(32,32))(label) #8
-
     input_image = Input(shape=(512, 512, 3), name="d_s2_input_image")
     model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(input_image)
     model = BatchNormalization(momentum=0.8)(model)
@@ -202,7 +196,6 @@ def build_discriminatorS2():
     model = LeakyReLU(alpha=en_alpha)(model)
     GAP4 = GlobalAveragePooling2D()(model)
 
-    model = Concatenate()([model, label])
     model = Conv2D(filters=192,  kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -215,17 +208,12 @@ def build_discriminatorS2():
     # model = Concatenate()([GAP1, GAP2, GAP3, GAP4, GAP5])
     model = Dense(2)(model)
     truefake = Activation('softmax', name="d_s2_out1_trfk")(model)
-    return Model(inputs=[input_image, input_label], outputs=[truefake])
+    return Model(inputs=[input_image], outputs=[truefake])
 
 
 def build_generatorS2():
     en_alpha=0.3
     dec_alpha=0.1
-
-    input_label = Input(shape=(1,))
-    label = Embedding(input_dim=9,output_dim=3,input_length=1)(input_label)
-    label = Reshape(target_shape=(1, 1, 3))(label)
-    label = UpSampling2D(size=(32,32))(label) #8
 
     input_line = Input(shape=(512, 512), name="g_s2_input_line")
     line = Reshape(target_shape=(512, 512, 1))(input_line)
@@ -286,7 +274,7 @@ def build_generatorS2():
     model = LeakyReLU(alpha=en_alpha)(model)
     e8 = model
 
-    model = Concatenate()([model, color, label])
+    model = Concatenate()([model, color])
     model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
     model = BatchNormalization(momentum=0.8)(model)
     model = LeakyReLU(alpha=en_alpha)(model)
@@ -329,11 +317,11 @@ def build_generatorS2():
 
     model = Conv2D(filters=3  , kernel_size=3, strides=1, padding='same')(model)
 
-    return Model(inputs=[input_line, input_color, input_label], outputs=[model])
+    return Model(inputs=[input_line, input_color], outputs=[model])
 
 def build_combinedS2(generator, discriminator):
-    return Model(inputs=[generator.inputs[0], generator.inputs[1], generator.inputs[2]], 
-            outputs=[discriminator([generator.outputs[0], generator.inputs[2]]), generator.outputs[0]])
+    return Model(inputs=[generator.inputs[0], generator.inputs[1]], 
+            outputs=[discriminator([generator.outputs[0]]), generator.outputs[0]])
 
 def build_frozen_discriminator(discriminator):
     frozen_d = Model(inputs=discriminator.inputs, outputs=discriminator.outputs)

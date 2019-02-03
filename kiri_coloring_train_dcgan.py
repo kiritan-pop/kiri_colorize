@@ -109,7 +109,7 @@ def gan_s1(GPUs, start_idx, batch_size):
                     # optimizer=Adam(lr=2e-5) #, beta_1=0.5) #, decay=1e-5)
                     # optimizer=Adam(lr=1e-4), #1e-4でよさそう Nadam
                     # optimizer=Adadelta(),
-                    optimizer=Nadam(lr=1e-4),
+                    optimizer=Nadam(),
                     )
     with open('d_model_s1.txt', 'w') as f:
         d_model_s1.summary(print_fn=summary_write)
@@ -123,12 +123,12 @@ def gan_s1(GPUs, start_idx, batch_size):
         combined = _tmpmdl
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'],  #, 'categorical_crossentropy'], #, 'mean_squared_error'],
-                    loss_weights=[1.0, 0.1],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
+                    loss_weights=[1.0, 0.05],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
                     # optimizer=Adam(lr=4e-4, beta_1=0.5),
                     # optimizer=Adam(lr=1e-4) #, beta_1=0.5) #, decay=1e-5),
                     # optimizer=Adam(lr=1e-4),  #1e-4でよさそう
                     # optimizer=Adadelta(),
-                    optimizer=Nadam(lr=1e-4),
+                    optimizer=Nadam(),
                     )
 
     #
@@ -167,7 +167,7 @@ def gan_s1(GPUs, start_idx, batch_size):
     pre_g_loss = 1000.0
     for epoch in range(start_idx+1, total_epochs+1):
         print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
-        if pre_d_loss * 1.1 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
+        if pre_d_loss * 1.5 >= pre_g_loss or epoch < 10 or epoch%10 == 0:
             d_losses = []
             for i in range(3):
                 x,y = q1s[i].get()
@@ -260,7 +260,7 @@ def gan_s2(GPUs, start_idx, batch_size):
     else:
         d_model_s2_tr = d_model_s2
     d_model_s2_tr.compile(loss='categorical_crossentropy',
-                    optimizer=Nadam(lr=1e-4),
+                    optimizer=Nadam(),
                     )
     with open('d_model_s2.txt', 'w') as f:
         d_model_s2.summary(print_fn=summary_write)
@@ -275,7 +275,7 @@ def gan_s2(GPUs, start_idx, batch_size):
 
     combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'], 
                     loss_weights=[1.0, 0.2],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
-                    optimizer=Nadam(lr=2e-4),
+                    optimizer=Nadam(),
                     )
 
     #
@@ -360,6 +360,78 @@ def gan_s2(GPUs, start_idx, batch_size):
             g_on_epoch_end(epoch, result_path)
             d_on_epoch_end(epoch, result_path)
 
+def gan_s2_alt(GPUs, start_idx, batch_size):
+    def g_on_epoch_end(epoch, path):
+        g_model_s2.save(g_model_s2_path)
+        g_model_s2.save(path + g_model_s2_path)
+        generator_testS2(g_model_s2_tr, test_dir, epoch, path)
+
+    def g_on_epoch_end_sub(epoch):
+        generator_testS2(g_model_s2_tr, test_short_dir, epoch, None, True)
+
+    #######################################################
+    # STAGE-2
+
+    if os.path.exists(g_model_s2_path):
+        g_model_s2 = load_model(g_model_s2_path)
+    else:
+        g_model_s2 = build_generatorS2()
+    if GPUs > 1:
+        g_model_s2_tr = multi_gpu_model(g_model_s2, gpus=GPUs)
+    else:
+        g_model_s2_tr = g_model_s2
+
+    def summary_write(line):
+        f.write(line+"\n")
+    with open('g_model_s2.txt', 'w') as f:
+        g_model_s2.summary(print_fn=summary_write)
+    plot_model(g_model_s2, to_file='g_model.png')
+
+    g_model_s2_tr.compile(loss=['mean_squared_error'], 
+                    optimizer=Nadam(),
+                    )
+    g_model_s2_tr._make_predict_function()
+
+    # 結合モデル（combined）用のデータジェネレータ、データを格納するキュー
+    cdgen = Comb_DatageneratorS2(color_path=img_dir, batch_size=batch_size)
+    q2 = dataQ(cdgen, args.queue_size, MP=True)
+    sleep(args.queue_size/4)
+
+    cdgen_valid = Comb_DatageneratorS2(color_path=img_dir, batch_size=batch_size, val=999)
+    q_valid_g = dataQ(cdgen_valid, args.queue_size, MP=True)
+    sleep(args.queue_size/4)
+
+    for epoch in range(start_idx+1, total_epochs+1):
+        print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
+        try:
+            x,y = q2.get()
+            g_loss = g_model_s2_tr.train_on_batch(x, y[1])
+        except Exception:
+            print(f"x={x[0].shape},{x[1].shape}")
+            print(f"y={y[0].shape},{y[1].shape}")
+        print(f'G_loss={g_loss:.3f}',end='')
+
+        # 100epoch毎にテスト画像生成、validuetion
+        if epoch%100 == 0:
+            g_on_epoch_end_sub(epoch)
+            # validuate
+            print(f'\tValidation :', end='')
+            x,y = q_valid_g.get()
+            ret = g_model_s2_tr.test_on_batch(x, y[1])
+            print(f'G_loss={ret:.3f}')
+
+        # 1000epoch毎にモデルの保存、テスト実施
+        if epoch%1000 == 0:
+            result_path = 'results/'
+            if not os.path.exists(result_path):
+                os.mkdir(result_path)
+            result_path += f'{epoch:05d}/'
+            if not os.path.exists(result_path):
+                os.mkdir(result_path)
+
+            g_on_epoch_end(epoch, result_path)
+
+
 def image_resize(img, resize):
     # アスペクト比維持
     tmp = img
@@ -378,6 +450,7 @@ def generator_test(g_model, test_dir, epoch, result_path, short=False):
     for image_path in random.sample(i_dirs,min([len(i_dirs),3])):
         img = Image.open(image_path)
         img = new_convert(img, "L")
+        img = img.filter(ImageFilter.MinFilter(3))
         img = image_resize(img,STANDARD_SIZE_S1)
         img = (np.asarray(img)-127.5)/127.5
         for selcol, colorvec in Colors.items():
@@ -421,7 +494,7 @@ def generator_testS2(g_model_s2, test_dir, epoch, result_path, short=False):
             # gens1 = image_resize(gens1, STANDARD_SIZE_S1)
             # gens1 = gens1.resize(STANDARD_SIZE_S1,Image.BICUBIC)
             gens1 = (np.asarray(gens1)-127.5)/127.5
-            ret = g_model_s2.predict_on_batch([np.array([line_s2]), np.array([gens1]), np.array([selvec]) ])
+            ret = g_model_s2.predict_on_batch([np.array([line_s2]), np.array([gens1])])
 
             if short:
                 exet = image_path.rsplit('.',1)[-1]
@@ -491,6 +564,6 @@ if __name__ == "__main__":
     backend.set_session(session)
     GPUs = len(args.gpu.split(','))
     if args.stage == '2':
-        gan_s2(GPUs=GPUs, start_idx=args.idx, batch_size=args.batch_size)
+        gan_s2_alt(GPUs=GPUs, start_idx=args.idx, batch_size=args.batch_size)
     else:
         gan_s1(GPUs=GPUs, start_idx=args.idx, batch_size=args.batch_size)

@@ -24,23 +24,27 @@ Colors['black']  = 8
 
 Colors_rev = {v:k for k,v in Colors.items()}
 
-def image_to_line_open(path):
-    tmp = path.split("/")
-    r = random.randint(0,100)%5
-    if r == 0:
-        tmp[-3] = "line_images"
-    elif r == 1:
-        tmp[-3] = "line_images2"
-    elif r == 2:
-        tmp[-3] = "line_images4"
-    elif r == 3:
-        tmp[-3] = "line_images5"
-    else:
-        tmp[-3] = "line_images3"
-    line_path = "/".join(tmp)
-    img = Image.open(line_path)
-    img = new_convert(img, "L")
-    return img
+def image_to_line(img): # img:RGBモード
+    gray = img
+    # 線画化
+    gray = new_convert(gray, "L") #グレイスケール
+    # if random.randint(0,100)%3 != 0:
+    gray2 = gray.filter(ImageFilter.MaxFilter(random.choice([3,5])))
+    senga_inv = ImageChops.difference(gray, gray2)
+    senga_inv = ImageOps.invert(senga_inv)
+    # else:
+    #     senga_inv = gray.filter(ImageFilter.CONTOUR)
+
+    en = ImageEnhance.Contrast(senga_inv)
+    senga_inv = en.enhance(random.choice([0.4,0.6,0.8,1.0,1.5,2.0]))
+    en = ImageEnhance.Brightness(senga_inv)
+    senga_inv = en.enhance(random.uniform(0.99,1.25))
+
+    # if random.randint(0,100)%5 == 0:
+    #     senga_inv = senga_inv.filter(ImageFilter.RankFilter(3,5))
+
+    return senga_inv
+
 
 def expand2square(pil_img, background_color):
     width, height = pil_img.size
@@ -69,36 +73,40 @@ def new_convert(img, mode):
 def image_arrange(path, resize=(128,128)):
     img = Image.open(path)
     img = new_convert(img, 'RGB')
-    #画像加工ランダム値（重いので）
+
+    # if random.randint(0,100)%3 == 0:
+    #     img = img.filter(ImageFilter.RankFilter(3,5))
+
+    img = ImageOps.autocontrast(img)
+
+    en = ImageEnhance.Color(img)
+    img = en.enhance(random.choice([0.5,1.0,1.5]))
+
+    #画像加工ランダム値
     rotate_rate = random.randint(0,360) #回転
     mirror =  random.randint(0,100) % 2
+    resize_rate_w = random.uniform(0.5,1.0)
+    resize_rate_h = random.uniform(0.5,1.0)
 
-    #線画（線画化してからリサイズ）
-    line = image_to_line_open(path)
-
-    # アスペクト比維持するように変更
-    img = img.resize(resize, Image.BICUBIC)
+    # 回転
     img = img.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
- 
-    line = line.resize(resize, Image.BICUBIC)
-    line = line.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
 
-    tmp = "gen1_images/" + "/".join(path.split("/")[2:])
-    if os.path.exists(tmp):
-        img_small = Image.open(tmp)
-        img_small = img_small.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
-    else:
-        img_small = None
+    r_img = img.resize( (int(img.width//resize_rate_w), int(img.height//resize_rate_h)), Image.BICUBIC)
+    r_width = random.randint(0, r_img.width  - img.width)
+    r_height = random.randint(0, r_img.height - img.height)
+    img = r_img.crop((r_width, r_height, img.width+r_width, img.height+r_height))
 
+    # 反転
     if mirror ==0:
         img = ImageOps.mirror(img)
-        line = ImageOps.mirror(line)
-        if img_small:
-            img_small = ImageOps.mirror(img_small)
+    # リサイズ
+    img = img.resize(resize, Image.BICUBIC)
+    #線画化
+    line = image_to_line(img)
 
     col = Colors[path.split("/")[-2]]
 
-    return img, line, img_small, col
+    return img, line, col
 
 
 class D_Datagenerator():
@@ -133,7 +141,7 @@ class D_Datagenerator():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line, _ , selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
 
@@ -182,11 +190,24 @@ class D_Datagenerator():
 
                 r = random.randint(0, self.batch_size*5)
                 if r == 0:
-                    filename = f'temp/gen_{selcol3}.png'
+                    if self.val == 999:
+                        filename = f'temp/v_gen_{selcol3}_org.png'
+                    else:
+                        filename = f'temp/gen_{selcol3}_org.png'
+                    tmp = (img*127.5+127.5).clip(0, 255).astype(np.uint8)
+                    Image.fromarray(tmp).save(filename,'png', optimize=True)
+
+                    if self.val == 999:
+                        filename = f'temp/v_gen_{selcol3}.png'
+                    else:
+                        filename = f'temp/gen_{selcol3}.png'
                     tmp = (x*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
-                    filename = f'temp/gen_{selcol3}_in.png'
+                    if self.val == 999:
+                        filename = f'temp/v_gen_{selcol3}_in.png'
+                    else:
+                        filename = f'temp/gen_{selcol3}_in.png'
                     tmp = (line*127.5+127.5).clip(0, 255).astype(np.uint8)
                     Image.fromarray(tmp).save(filename,'png', optimize=True)
 
@@ -258,7 +279,7 @@ class Comb_Datagenerator():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line, _, selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
+            img, line, selvec = image_arrange(path, resize=STANDARD_SIZE_S1)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
 
@@ -330,9 +351,8 @@ class D_DatageneratorS2():
             ytmp1 = self.color_images[self.batch_size*idx:self.batch_size*(idx+1)]
 
         def func(path):
-            img, line, img_small, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
-            if random.randint(0,100) % 2 == 0:
-                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            img, line, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
+            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
@@ -424,7 +444,7 @@ class D_DatageneratorS2():
             col.append(v)
             y.append(b)
 
-        return [np.asarray(x), np.asarray(col)], np.asarray(y)
+        return np.asarray(x), np.asarray(y)
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！
@@ -464,10 +484,9 @@ class Comb_DatageneratorS2():
             ytmp1 = self.color_images_flat[self.batch_size*idx:self.batch_size*(idx+1)]
         xy  = queue.Queue()
         def func(path):
-            img, line, img_small, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
-            if random.randint(0,100) % 3 != 0:
-                img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
-                img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.1)) )
+            img, line, selvec = image_arrange(path, resize=STANDARD_SIZE_S2)
+            img_small = img.resize(STANDARD_SIZE_S1, Image.BICUBIC)
+            img_small = img_small.filter(ImageFilter.GaussianBlur(random.uniform(0.0, 0.3)) )
             line = (np.asarray(line)-127.5)/127.5
             img = (np.asarray(img)-127.5)/127.5
             img_small = (np.asarray(img_small)-127.5)/127.5
@@ -502,7 +521,7 @@ class Comb_DatageneratorS2():
             y.append(c)
             y_imgs.append(d)
 
-        return [np.asarray(x), np.asarray(s1gen), np.asarray(col)], [np.asarray(y), np.asarray(y_imgs)]
+        return [np.asarray(x), np.asarray(s1gen)], [np.asarray(y), np.asarray(y_imgs)]
 
     def __len__(self):
         # 全データ数をバッチサイズで割って、何バッチになるか返すよー！
