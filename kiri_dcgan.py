@@ -46,9 +46,9 @@ def image_to_line(img): # img:RGBモード
     senga_inv = ImageOps.invert(senga_inv)
 
     en = ImageEnhance.Contrast(senga_inv)
-    senga_inv = en.enhance(random.choice([0.4,0.6,0.8,1.0,1.5,2.0]))
+    senga_inv = en.enhance(random.choice([0.8,1.0,1.5,2.0,3.0]))
     en = ImageEnhance.Brightness(senga_inv)
-    senga_inv = en.enhance(random.uniform(0.99,1.25))
+    senga_inv = en.enhance(random.uniform(0.99,1.1))
 
     return senga_inv
 
@@ -81,12 +81,12 @@ def image_arrange(path, resize=(128,128)):
     img = new_convert(img, 'RGB')
     img = ImageOps.autocontrast(img)
     en = ImageEnhance.Color(img)
-    img = en.enhance(random.choice([0.5,1.0,1.5]))
+    img = en.enhance(random.choice([0.85, 1.0, 1.1, 1.25]))
     #画像加工ランダム値
     rotate_rate = random.randint(0,360) #回転
     mirror =  random.randint(0,100) % 2
-    resize_rate_w = random.uniform(0.5,1.0)
-    resize_rate_h = random.uniform(0.5,1.0)
+    resize_rate_w = random.uniform(0.65,1.0)
+    resize_rate_h = random.uniform(0.65,1.0)
     # 回転
     img = img.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
 
@@ -98,16 +98,25 @@ def image_arrange(path, resize=(128,128)):
     # 反転
     if mirror ==0:
         img = ImageOps.mirror(img)
-    # リサイズ
-    img = img.resize(resize, Image.BICUBIC)
+
     #線画化
     line = image_to_line(img)
+    # リサイズ
+    img = img.resize(resize, Image.BICUBIC)
+    line = line.resize(resize, Image.BICUBIC)
 
-    return img, line
+    # ヒストグラムを圧縮１６分の１
+    hist_org = img.histogram()
+    hist = []
+    for i in range(256*3//16):
+        tmp = sum(hist_org[i*16:(i+1)*16])
+        hist.append(tmp)
+
+    return img, line, hist
 
 
 class DataSet():
-    def __init__(self, image_path, qsize=4096, valid=0.1):
+    def __init__(self, image_path, qsize=4096, valid=0.1, workers=1):
         images = []
         for p in os.listdir(image_path):
             for f in os.listdir(os.path.join(image_path, p)):
@@ -124,15 +133,15 @@ class DataSet():
             while True:
                 for path in img_path:
                     #本物
-                    img, line_img = image_arrange(path, resize=(128,128))
+                    img, line_img, hist = image_arrange(path, resize=(128,128))
                     img = (np.asarray(img)-127.5)/127.5
                     line_img = (np.asarray(line_img)-127.5)/127.5
-                    que.put((img, line_img))
+                    hist = np.asarray(hist)/(128**2)
+                    que.put((img, line_img, hist))
 
-        multiprocessing.Process(target=datagen, args=(self.image_que, images[:len(images)//4])).start()
-        multiprocessing.Process(target=datagen, args=(self.image_que, images[len(images)//4:len(images)*2//4])).start()
-        multiprocessing.Process(target=datagen, args=(self.image_que, images[len(images)*2//4:len(images)*3//4])).start()
-        multiprocessing.Process(target=datagen, args=(self.image_que, images[len(images)*3//4:])).start()
+        len_images = len(images)
+        for i in range(workers):
+            multiprocessing.Process(target=datagen, args=(self.image_que, images[len_images*i//workers:len_images*(i+1)//workers])).start()
         multiprocessing.Process(target=datagen, args=(self.valid_image_que, valid_images)).start()
 
     def get_data(self, size, val=False):
@@ -144,16 +153,18 @@ class DataSet():
 
         images = np.zeros((size, 128, 128, 3))
         line_images = np.zeros((size, 128, 128))
+        hists = np.zeros((size, 48))
         for i in range(size):
-            img, line = tmp_que.get()
+            img, line, hist = tmp_que.get()
             images[i] = img
             line_images[i] = line
+            hists[i] = hist
 
-        return images, line_images
+        return images, line_images, hists
 
 class KiriDcgan():
-    def __init__(self, image_path, batch_size, GPUs, g_path, d_path, result_path='results/', qsize=4096):
-        self.dataset = DataSet(image_path, qsize=qsize, valid=0.1)
+    def __init__(self, image_path, batch_size, GPUs, g_path, d_path, result_path='results/', qsize=4096, workers=1):
+        self.dataset = DataSet(image_path, qsize=qsize, valid=0.1, workers=workers)
         self.batch_size = batch_size
         self.g_path = g_path
         self.d_path = d_path
@@ -171,6 +182,7 @@ class KiriDcgan():
         else:
             self.g_model_s1_tr = self.g_model_s1
 
+        self.g_model_s1_tr.compile(loss='mean_squared_error',optimizer=Nadam())
         def summary_write(line):
             f.write(line+"\n")
         with open('g_model_s1.txt', 'w') as f:
@@ -200,8 +212,8 @@ class KiriDcgan():
         else:
             self.combined = _tmpmdl
 
-        self.combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'],  #, 'categorical_crossentropy'], #, 'mean_squared_error'],
-                        loss_weights=[1.0, 0.05],  # 重みにn倍差をつけてみる 20倍でよさそう。40倍だと暴れるかも。
+        self.combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'],
+                        loss_weights=[1.0, 1.0],
                         optimizer=Nadam(),
                         )
 
@@ -215,14 +227,13 @@ class KiriDcgan():
     def train(self, start_idx, total_epochs, save_epochs=1000, sub_epochs=100):
         for epoch in range(start_idx+1, total_epochs+1):
             print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
-            true_images, line_images = self.dataset.get_data(self.batch_size)
-            y1 = np.zeros((self.batch_size//2, 2))
-            for p in range(self.batch_size//2):
+            true_images, line_images, hists = self.dataset.get_data(self.batch_size)
+            y1 = np.zeros((self.batch_size, 2))
+            for p in range(self.batch_size):
                 r = random.uniform(0.0, 0.2)
                 y1[p] = [1.0 - r, 0.0 + r]
 
-            noise = np.random.normal(0.0,1.0,(self.batch_size,64))
-            fake_images = self.g_model_s1_tr.predict_on_batch([line_images[:self.batch_size//2], noise[:self.batch_size//2]])
+            fake_images = self.g_model_s1_tr.predict_on_batch([line_images, hists])
             if epoch % 10 == 0:
                 filename = os.path.join("temp/", f"gen.png")
                 tmp = (fake_images[0]*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -236,22 +247,33 @@ class KiriDcgan():
                 tmp = (true_images[0]*127.5+127.5).clip(0, 255).astype(np.uint8)
                 Image.fromarray(tmp).save(filename, optimize=True)
 
-            y2 = np.zeros((self.batch_size//2, 2))
-            for p in range(self.batch_size//2):
+            y2 = np.zeros((self.batch_size, 2))
+            for p in range(self.batch_size):
                 r = random.uniform(0.0, 0.2)
                 y2[p] = [0.0 + r, 1.0 - r]
 
-            d_loss_true = self.d_model_s1_tr.train_on_batch(true_images[:self.batch_size//2], y1)
-            d_loss_fake = self.d_model_s1_tr.train_on_batch(fake_images, y2)
-
-            d_loss = sum([d_loss_true, d_loss_fake])/2
-            print(f'D_loss={d_loss:.3f}  ',end='')
+            R = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            R = R/R.sum()
+            G = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            G = G/G.sum()
+            B = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            B = B/B.sum()
+            noise = np.concatenate([R,G,B], axis=1)
 
             y3 = np.zeros((self.batch_size, 2))
             for p in range(self.batch_size):
-                r = random.uniform(0.0, 0.2)
-                y3[p] = [1.0 - r, 0.0 + r]
-            g_loss = self.combined.train_on_batch([line_images, noise], [y3, true_images])
+                mse = 0.5 * np.sum((noise[p] - hists[p])**2)
+                # print(f"mse={mse:.3f}")
+                y3[p] = [0.5 - mse, 0.5 + mse]
+
+            d_loss_true = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
+            d_loss_fake = self.d_model_s1_tr.train_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
+            d_loss_true_alt = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
+
+            d_loss = sum([d_loss_true, d_loss_fake, d_loss_true_alt])/3
+            print(f'D_loss={d_loss:.3f}  ',end='')
+
+            g_loss = self.combined.train_on_batch([line_images, hists], [y1, true_images])
             print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})',end='')
 
             # 100epoch毎にテスト画像生成、validuetion
@@ -259,31 +281,44 @@ class KiriDcgan():
                 self.g_on_epoch_end_sub(epoch)
                 # validuate
                 print(f'\tValidation :', end='')
-                true_images, line_images = self.dataset.get_data(self.batch_size, val=True)
-                y1 = np.zeros((self.batch_size//2, 2))
-                for p in range(self.batch_size//2):
+
+                true_images, line_images, hists = self.dataset.get_data(self.batch_size, val=True)
+                y1 = np.zeros((self.batch_size, 2))
+                for p in range(self.batch_size):
                     r = random.uniform(0.0, 0.2)
                     y1[p] = [1.0 - r, 0.0 + r]
 
-                noise = np.random.normal(0.0,1.0,(self.batch_size,64))
-                fake_images = self.g_model_s1_tr.predict_on_batch([line_images[:self.batch_size//2], noise[:self.batch_size//2]])
-
-                y2 = np.zeros((self.batch_size//2, 2))
-                for p in range(self.batch_size//2):
+                fake_images = self.g_model_s1_tr.predict_on_batch([line_images, hists])
+                y2 = np.zeros((self.batch_size, 2))
+                for p in range(self.batch_size):
                     r = random.uniform(0.0, 0.2)
                     y2[p] = [0.0 + r, 1.0 - r]
 
-                d_loss_true = self.d_model_s1_tr.test_on_batch(true_images[:self.batch_size//2], y1)
-                d_loss_fake = self.d_model_s1_tr.test_on_batch(fake_images, y2)
+                R = np.random.uniform(0.0,1.0,(self.batch_size,16))
+                R = R/R.sum()
+                G = np.random.uniform(0.0,1.0,(self.batch_size,16))
+                G = G/G.sum()
+                B = np.random.uniform(0.0,1.0,(self.batch_size,16))
+                B = B/B.sum()
+                noise = np.concatenate([R,G,B], axis=1)
 
-                d_loss = sum([d_loss_true, d_loss_fake])/2
+                y3 = np.zeros((self.batch_size, 2))
+                for p in range(self.batch_size):
+                    mse = 0.5 * np.sum((noise[p] - hists[p])**2)
+                    y3[p] = [1.0 - mse, 0.0 + mse]
+
+                d_loss_true = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
+                d_loss_fake = self.d_model_s1_tr.test_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
+                d_loss_true_alt = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
+
+                d_loss = sum([d_loss_true, d_loss_fake, d_loss_true_alt])/3
                 print(f'D_loss={d_loss:.3f}  ',end='')
 
                 y3 = np.zeros((self.batch_size, 2))
                 for p in range(self.batch_size):
                     r = random.uniform(0.0, 0.2)
                     y3[p] = [1.0 - r, 0.0 + r]
-                g_loss = self.combined.test_on_batch([line_images, noise], [y3, true_images])
+                g_loss = self.combined.test_on_batch([line_images, hists], [y3, true_images])
                 print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})')
 
             # 1000epoch毎にモデルの保存、テスト実施
@@ -325,12 +360,19 @@ class KiriDcgan():
             img = image_resize(img,(128,128))
             img = (np.asarray(img)-127.5)/127.5
             img = img.reshape((1,128,128))
-            img = img.repeat(num, axis=0)
-            noise = np.random.normal(0.0,1.0,(num,64))
-            results = self.g_model_s1_tr.predict_on_batch([img, noise])
+            imgs = img.repeat(num, axis=0)
+            R = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            R = R/R.sum()
+            G = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            G = G/G.sum()
+            B = np.random.uniform(0.0,1.0,(self.batch_size,16))
+            B = B/B.sum()
+            noise = np.concatenate([R,G,B], axis=1)
+            results = self.g_model_s1_tr.predict_on_batch([imgs, noise])
             for i, ret in enumerate(results):
                 if short:
-                    filename = f"temp2/{epoch:06}_{tmp_name}_{i:02}.{exet}"
+                    os.makedirs(f"temp2/{epoch:06}", exist_ok=True)
+                    filename = f"temp2/{epoch:06}/{tmp_name}_{i:02}.{exet}"
                 else:
                     filename = f"{result_path}/{tmp_name}_{i:02}.{exet}"
 
@@ -338,13 +380,14 @@ class KiriDcgan():
                 Image.fromarray(tmp).save(filename, optimize=True)
 
 
-    def _discrimin_test(self, epoch, result_path, num=12):
+    def _discrimin_test(self, epoch, result_path, num=6):
         #判定
-        true_imgs, line_images = self.dataset.get_data(num)
-        noise = np.random.normal(0.0,1.0,(num//2,64))
-        fake_imgs = self.g_model_s1_tr.predict_on_batch([line_images[-num//2:], noise])
+        true_imgs, line_images, hists = self.dataset.get_data(num)
+        # noise = np.random.normal(0.0,1.0,(num,16))
+        fake_imgs = self.g_model_s1_tr.predict_on_batch([line_images[-num:], hists])
         imgs = np.concatenate([true_imgs,fake_imgs], axis=0)
-        results = self.d_model_s1_tr.predict_on_batch(imgs)
+        hists = hists.repeat(2, axis=0)
+        results = self.d_model_s1_tr.predict_on_batch([imgs, hists])
         for i,(img,result) in enumerate(zip(imgs,results)):
             filename = f'd{i:02}[{result[0]:1.2f}][{result[1]:1.2f}].png'
             tmp = (img*127.5+127.5).clip(0, 255).astype(np.uint8)
@@ -353,7 +396,12 @@ class KiriDcgan():
 
     def build_discriminator(self):
         en_alpha=0.3
-        stddev=0.1 #0.2でいいかな？
+        stddev=0.05
+
+        input_noise = Input(shape=(48,), name="g_s1_input_noise")
+        noise = Dense(8*8*8)(input_noise)
+        noise = LeakyReLU(alpha=en_alpha)(noise)
+        noise = Reshape(target_shape=(8, 8, 8))(noise)
 
         input_image = Input(shape=(128, 128, 3), name="d_s1_input_main")
 
@@ -368,7 +416,6 @@ class KiriDcgan():
         model = Conv2D(filters=64,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
-        gap1  = GlobalAveragePooling2D()(model)
         model = Conv2D(filters=128, kernel_size=4, strides=2, padding='same')(model) # >32
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -376,7 +423,6 @@ class KiriDcgan():
         model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
-        gap2  = GlobalAveragePooling2D()(model)
         model = Conv2D(filters=256,  kernel_size=4, strides=2, padding='same')(model) # >16
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -384,21 +430,28 @@ class KiriDcgan():
         model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
-        model = GlobalAveragePooling2D()(model)
+        model = Conv2D(filters=512,  kernel_size=4, strides=2, padding='same')(model) # >8
+        model = BatchNormalization(momentum=0.8)(model)
+        model = LeakyReLU(alpha=en_alpha)(model)
 
-        model = Concatenate()([model, gap1, gap2])
+        model = Concatenate()([model, noise])
+        model = Conv2D(filters=512,  kernel_size=3, strides=1, padding='same')(model)
+        model = BatchNormalization(momentum=0.8)(model)
+        model = LeakyReLU(alpha=en_alpha)(model)
+
+        model = GlobalAveragePooling2D()(model)
         model = Dense(2)(model)
         truefake = Activation('softmax', name="d_s1_out1_trfk")(model)
-        return Model(inputs=[input_image], outputs=[truefake])
+        return Model(inputs=[input_image, input_noise], outputs=[truefake])
 
     def build_generator(self):
         en_alpha=0.3
         dec_alpha=0.1
 
-        input_noise = Input(shape=(64,), name="g_s1_input_noise")
-        noise = Dense(32*32)(input_noise)
+        input_noise = Input(shape=(48,), name="g_s1_input_noise")
+        noise = Dense(8*8*8)(input_noise)
         noise = LeakyReLU(alpha=en_alpha)(noise)
-        noise = Reshape(target_shape=(32, 32, 1))(noise)
+        noise = Reshape(target_shape=(8, 8, 8))(noise)
 
         input_tensor = Input(shape=(128, 128), name="g_s1_input_main")
         model = Reshape(target_shape=(128, 128, 1))(input_tensor)
@@ -420,7 +473,6 @@ class KiriDcgan():
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
 
-        model = Concatenate()([model,noise])
         model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -440,13 +492,12 @@ class KiriDcgan():
         model = LeakyReLU(alpha=en_alpha)(model)
         e8 = model
 
-        model = Dropout(0.4)(model)
+        model = Concatenate()([model, noise])
         model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
 
-        model = Concatenate()([model,e8])   # 順序はあまり影響しないかな
-        model = GaussianNoise(0.2)(model)
+        model = Concatenate()([model, e8])   # 順序はあまり影響しないかな
         model = Conv2DTranspose(filters=512, kernel_size=4, strides=2, padding='same')(model) #8->16
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=dec_alpha)(model)
@@ -486,8 +537,9 @@ class KiriDcgan():
 
         return Model(inputs=[input_tensor, input_noise], outputs=[model])
 
+
     def build_combined(self, generator, discriminator):
-        return Model(inputs=[generator.inputs[0], generator.inputs[1]], outputs=[discriminator(generator.outputs[0]), generator.outputs[0]] )
+        return Model(inputs=[generator.inputs[0], generator.inputs[1]], outputs=[discriminator([generator.outputs[0], generator.inputs[1]]), generator.outputs[0]] )
 
 
     def build_frozen_discriminator(self, discriminator):
@@ -514,5 +566,6 @@ if __name__ == "__main__":
                     GPUs=GPUs, 
                     g_path='g_model_s1.h5', 
                     d_path='d_model_s1.h5',
-                    qsize=args.queue_size)
-    kiri.train(start_idx=args.idx, total_epochs=1000000, save_epochs=100, sub_epochs=100)
+                    qsize=args.queue_size,
+                    workers=8)
+    kiri.train(start_idx=args.idx, total_epochs=1000000, save_epochs=1000, sub_epochs=100)
