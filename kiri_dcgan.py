@@ -7,7 +7,7 @@ from keras.callbacks import EarlyStopping, LambdaCallback
 from keras import backend
 from keras.layers import Input, Dense, Dropout, Activation, GlobalAveragePooling2D, GlobalMaxPooling2D,\
                         Conv2D, MaxPooling2D, Conv2DTranspose, UpSampling2D, Reshape, Concatenate, Average, Reshape,\
-                        GaussianNoise, LeakyReLU, BatchNormalization, Embedding
+                        GaussianNoise, LeakyReLU, BatchNormalization, Embedding, Flatten
 
 import os,glob,sys,json,random,cv2,threading,queue,multiprocessing
 from time import sleep
@@ -105,15 +105,30 @@ def image_arrange(path, resize=(128,128)):
     img = img.resize(resize, Image.BICUBIC)
     line = line.resize(resize, Image.BICUBIC)
 
-    # ヒストグラムを圧縮１６分の１
-    hist_org = img.histogram()
-    hist = []
-    for i in range(256*3//16):
-        tmp = sum(hist_org[i*16:(i+1)*16])
-        hist.append(tmp)
+    # カラー情報(減色して、トップｎ個のカラー情報RGBを返す)
+    qnum = 16
+    p = img.quantize(qnum)
+    palette = p.getpalette()[:qnum*3]
+    colors = sorted(p.getcolors(), key=lambda x: -x[0])[:8]
+    rgb = []
+    num = []
+    for n, c in colors:
+        rgb.append(palette[3*c:3*(c+1)])
+        num.append(n)
 
-    return img, line, hist
+    return img, line, rgb, num
 
+
+def make_noise(num):
+    RGB = np.random.uniform(-1.0,1.0,(num, 8, 3))
+    RGB[:, :2, :] += 1.0  # 背景を白っぽくするため
+
+    # R = R/R.sum(axis=1,keepdims=True)
+    # G = G/G.sum(axis=1,keepdims=True)
+    # B = B/B.sum(axis=1,keepdims=True)
+    # noise = np.concatenate([R,G,B], axis=1)
+
+    return RGB
 
 class DataSet():
     def __init__(self, image_path, qsize=4096, valid=0.1, workers=1):
@@ -133,11 +148,11 @@ class DataSet():
             while True:
                 for path in img_path:
                     #本物
-                    img, line_img, hist = image_arrange(path, resize=(128,128))
+                    img, line_img, color, _ = image_arrange(path, resize=(128,128))
                     img = (np.asarray(img)-127.5)/127.5
                     line_img = (np.asarray(line_img)-127.5)/127.5
-                    hist = np.asarray(hist)/(128**2)
-                    que.put((img, line_img, hist))
+                    color = (np.asarray(color)-127.5)/127.5
+                    que.put((img, line_img, color))
 
         len_images = len(images)
         for i in range(workers):
@@ -153,14 +168,14 @@ class DataSet():
 
         images = np.zeros((size, 128, 128, 3))
         line_images = np.zeros((size, 128, 128))
-        hists = np.zeros((size, 48))
+        colors = np.zeros((size, 8, 3))
         for i in range(size):
             img, line, hist = tmp_que.get()
             images[i] = img
             line_images[i] = line
-            hists[i] = hist
+            colors[i] = hist
 
-        return images, line_images, hists
+        return images, line_images, colors
 
 class KiriDcgan():
     def __init__(self, image_path, batch_size, GPUs, g_path, d_path, result_path='results/', qsize=4096, workers=1):
@@ -252,19 +267,13 @@ class KiriDcgan():
                 r = random.uniform(0.0, 0.2)
                 y2[p] = [0.0 + r, 1.0 - r]
 
-            R = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            R = R/R.sum()
-            G = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            G = G/G.sum()
-            B = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            B = B/B.sum()
-            noise = np.concatenate([R,G,B], axis=1)
+            noise = make_noise(self.batch_size)
 
             y3 = np.zeros((self.batch_size, 2))
             for p in range(self.batch_size):
                 mse = 0.5 * np.sum((noise[p] - hists[p])**2)
                 # print(f"mse={mse:.3f}")
-                y3[p] = [0.5 - mse, 0.5 + mse]
+                y3[p] = [max([0.0, 0.5 - mse]), min([1.0, 0.5 + mse])]
 
             d_loss_true = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
             d_loss_fake = self.d_model_s1_tr.train_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
@@ -294,13 +303,7 @@ class KiriDcgan():
                     r = random.uniform(0.0, 0.2)
                     y2[p] = [0.0 + r, 1.0 - r]
 
-                R = np.random.uniform(0.0,1.0,(self.batch_size,16))
-                R = R/R.sum()
-                G = np.random.uniform(0.0,1.0,(self.batch_size,16))
-                G = G/G.sum()
-                B = np.random.uniform(0.0,1.0,(self.batch_size,16))
-                B = B/B.sum()
-                noise = np.concatenate([R,G,B], axis=1)
+                noise = make_noise(self.batch_size)
 
                 y3 = np.zeros((self.batch_size, 2))
                 for p in range(self.batch_size):
@@ -361,13 +364,7 @@ class KiriDcgan():
             img = (np.asarray(img)-127.5)/127.5
             img = img.reshape((1,128,128))
             imgs = img.repeat(num, axis=0)
-            R = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            R = R/R.sum()
-            G = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            G = G/G.sum()
-            B = np.random.uniform(0.0,1.0,(self.batch_size,16))
-            B = B/B.sum()
-            noise = np.concatenate([R,G,B], axis=1)
+            noise = make_noise(num)
             results = self.g_model_s1_tr.predict_on_batch([imgs, noise])
             for i, ret in enumerate(results):
                 if short:
@@ -383,7 +380,6 @@ class KiriDcgan():
     def _discrimin_test(self, epoch, result_path, num=6):
         #判定
         true_imgs, line_images, hists = self.dataset.get_data(num)
-        # noise = np.random.normal(0.0,1.0,(num,16))
         fake_imgs = self.g_model_s1_tr.predict_on_batch([line_images[-num:], hists])
         imgs = np.concatenate([true_imgs,fake_imgs], axis=0)
         hists = hists.repeat(2, axis=0)
@@ -398,10 +394,11 @@ class KiriDcgan():
         en_alpha=0.3
         stddev=0.05
 
-        input_noise = Input(shape=(48,), name="g_s1_input_noise")
-        noise = Dense(8*8*8)(input_noise)
-        noise = LeakyReLU(alpha=en_alpha)(noise)
-        noise = Reshape(target_shape=(8, 8, 8))(noise)
+        input_color = Input(shape=(8,3), name="d_s1_input_color")
+        color = Flatten()(input_color)
+        color = Dense(8*8*8)(color)
+        color = LeakyReLU(alpha=en_alpha)(color)
+        color = Reshape(target_shape=(8, 8, 8))(color)
 
         input_image = Input(shape=(128, 128, 3), name="d_s1_input_main")
 
@@ -416,6 +413,7 @@ class KiriDcgan():
         model = Conv2D(filters=64,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
+        gap1  = GlobalAveragePooling2D()(model)
         model = Conv2D(filters=128, kernel_size=4, strides=2, padding='same')(model) # >32
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -423,6 +421,7 @@ class KiriDcgan():
         model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
+        gap2  = GlobalAveragePooling2D()(model)
         model = Conv2D(filters=256,  kernel_size=4, strides=2, padding='same')(model) # >16
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -430,28 +429,31 @@ class KiriDcgan():
         model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
+        gap3  = GlobalAveragePooling2D()(model)
         model = Conv2D(filters=512,  kernel_size=4, strides=2, padding='same')(model) # >8
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
 
-        model = Concatenate()([model, noise])
+        model = Concatenate()([model, color])
         model = Conv2D(filters=512,  kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
-
         model = GlobalAveragePooling2D()(model)
+
+        model = Concatenate()([gap1, gap2, gap3, model])
         model = Dense(2)(model)
         truefake = Activation('softmax', name="d_s1_out1_trfk")(model)
-        return Model(inputs=[input_image, input_noise], outputs=[truefake])
+        return Model(inputs=[input_image, input_color], outputs=[truefake])
 
     def build_generator(self):
         en_alpha=0.3
         dec_alpha=0.1
 
-        input_noise = Input(shape=(48,), name="g_s1_input_noise")
-        noise = Dense(8*8*8)(input_noise)
-        noise = LeakyReLU(alpha=en_alpha)(noise)
-        noise = Reshape(target_shape=(8, 8, 8))(noise)
+        input_color = Input(shape=(8,3), name="g_s1_input_color")
+        color = Flatten()(input_color)
+        color = Dense(8*8*8)(color)
+        color = LeakyReLU(alpha=en_alpha)(color)
+        color = Reshape(target_shape=(8, 8, 8))(color)
 
         input_tensor = Input(shape=(128, 128), name="g_s1_input_main")
         model = Reshape(target_shape=(128, 128, 1))(input_tensor)
@@ -492,11 +494,13 @@ class KiriDcgan():
         model = LeakyReLU(alpha=en_alpha)(model)
         e8 = model
 
-        model = Concatenate()([model, noise])
+        model = Dropout(0.5)(model)
+        model = Concatenate()([model, color])
         model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
 
+        model = GaussianNoise(0.05)(model)
         model = Concatenate()([model, e8])   # 順序はあまり影響しないかな
         model = Conv2DTranspose(filters=512, kernel_size=4, strides=2, padding='same')(model) #8->16
         model = BatchNormalization(momentum=0.8)(model)
@@ -535,7 +539,7 @@ class KiriDcgan():
 
         model = Conv2D(filters=3  , kernel_size=3, strides=1, padding='same')(model)
 
-        return Model(inputs=[input_tensor, input_noise], outputs=[model])
+        return Model(inputs=[input_tensor, input_color], outputs=[model])
 
 
     def build_combined(self, generator, discriminator):
