@@ -241,8 +241,17 @@ class KiriDcgan():
 
     def train(self, start_idx, total_epochs, save_epochs=1000, sub_epochs=100):
         for epoch in range(start_idx+1, total_epochs+1):
-            print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
-            true_images, line_images, hists = self.dataset.get_data(self.batch_size)
+            # 100epoch毎にテスト画像生成、validuetion
+            if epoch%sub_epochs == 0:
+                self.g_on_epoch_end_sub(epoch)
+                # validuate
+                print(f'\tValidation :', end='')
+                val_flg = True
+            else:
+                print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
+                val_flg = False
+
+            true_images, line_images, hists = self.dataset.get_data(self.batch_size, val=val_flg)
             y1 = np.zeros((self.batch_size, 2))
             for p in range(self.batch_size):
                 r = random.uniform(0.0, 0.2)
@@ -287,42 +296,7 @@ class KiriDcgan():
 
             # 100epoch毎にテスト画像生成、validuetion
             if epoch%sub_epochs == 0:
-                self.g_on_epoch_end_sub(epoch)
-                # validuate
-                print(f'\tValidation :', end='')
-
-                true_images, line_images, hists = self.dataset.get_data(self.batch_size, val=True)
-                y1 = np.zeros((self.batch_size, 2))
-                for p in range(self.batch_size):
-                    r = random.uniform(0.0, 0.2)
-                    y1[p] = [1.0 - r, 0.0 + r]
-
-                fake_images = self.g_model_s1_tr.predict_on_batch([line_images, hists])
-                y2 = np.zeros((self.batch_size, 2))
-                for p in range(self.batch_size):
-                    r = random.uniform(0.0, 0.2)
-                    y2[p] = [0.0 + r, 1.0 - r]
-
-                noise = make_noise(self.batch_size)
-
-                y3 = np.zeros((self.batch_size, 2))
-                for p in range(self.batch_size):
-                    mse = 0.5 * np.sum((noise[p] - hists[p])**2)
-                    y3[p] = [1.0 - mse, 0.0 + mse]
-
-                d_loss_true = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
-                d_loss_fake = self.d_model_s1_tr.test_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
-                d_loss_true_alt = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
-
-                d_loss = sum([d_loss_true, d_loss_fake, d_loss_true_alt])/3
-                print(f'D_loss={d_loss:.3f}  ',end='')
-
-                y3 = np.zeros((self.batch_size, 2))
-                for p in range(self.batch_size):
-                    r = random.uniform(0.0, 0.2)
-                    y3[p] = [1.0 - r, 0.0 + r]
-                g_loss = self.combined.test_on_batch([line_images, hists], [y3, true_images])
-                print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})')
+                print()
 
             # 1000epoch毎にモデルの保存、テスト実施
             if epoch%save_epochs == 0:
