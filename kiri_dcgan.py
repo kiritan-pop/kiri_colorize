@@ -18,12 +18,16 @@ import argparse
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+# 減色
+QNUM = 16
+
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", type=str, default='0')
     parser.add_argument("--idx", type=int, default=0)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--queue_size", type=int, default=10)
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
     return args
 
@@ -106,29 +110,24 @@ def image_arrange(path, resize=(128,128)):
     line = line.resize(resize, Image.BICUBIC)
 
     # カラー情報(減色して、トップｎ個のカラー情報RGBを返す)
-    qnum = 16
-    p = img.quantize(qnum)
-    palette = p.getpalette()[:qnum*3]
-    colors = sorted(p.getcolors(), key=lambda x: -x[0])[:8]
-    rgb = []
-    num = []
-    for n, c in colors:
-        rgb.append(palette[3*c:3*(c+1)])
-        num.append(n)
+    p = img.quantize(QNUM)
+    palette = p.getpalette()[:QNUM*3]
+    colors = sorted(p.getcolors(), key=lambda x: -x[0])
+    rgb = [[0 for _ in range(3)] for _ in range(QNUM)]
+    num = [0 for _ in range(QNUM)]
+    for i,(n, c) in enumerate(colors[:QNUM]):
+        rgb[i] = palette[3*c:3*(c+1)]
+        num[i] = n
 
     return img, line, rgb, num
 
 
 def make_noise(num):
-    RGB = np.random.uniform(-1.0,1.0,(num, 8, 3))
-    RGB[:, :2, :] += 1.0  # 背景を白っぽくするため
+    RGB = np.random.uniform(-1.0,1.0,(num, QNUM, 3))
+    RGB[:, :2, :] += 5.0  # 背景を白っぽくするため
+    N = np.random.uniform(0.0,1.0,(num, QNUM, 1))
 
-    # R = R/R.sum(axis=1,keepdims=True)
-    # G = G/G.sum(axis=1,keepdims=True)
-    # B = B/B.sum(axis=1,keepdims=True)
-    # noise = np.concatenate([R,G,B], axis=1)
-
-    return RGB
+    return np.concatenate([RGB,N],axis=-1)
 
 class DataSet():
     def __init__(self, image_path, qsize=4096, valid=0.1, workers=1):
@@ -148,11 +147,12 @@ class DataSet():
             while True:
                 for path in img_path:
                     #本物
-                    img, line_img, color, _ = image_arrange(path, resize=(128,128))
+                    img, line_img, color, num = image_arrange(path, resize=(128,128))
                     img = (np.asarray(img)-127.5)/127.5
                     line_img = (np.asarray(line_img)-127.5)/127.5
                     color = (np.asarray(color)-127.5)/127.5
-                    que.put((img, line_img, color))
+                    num = np.asarray(num)/(128**2)
+                    que.put((img, line_img, np.concatenate([color, num.reshape((QNUM,1))], axis=1)))
 
         len_images = len(images)
         for i in range(workers):
@@ -168,12 +168,12 @@ class DataSet():
 
         images = np.zeros((size, 128, 128, 3))
         line_images = np.zeros((size, 128, 128))
-        colors = np.zeros((size, 8, 3))
+        colors = np.zeros((size, QNUM, 4))
         for i in range(size):
-            img, line, hist = tmp_que.get()
+            img, line, color = tmp_que.get()
             images[i] = img
             line_images[i] = line
-            colors[i] = hist
+            colors[i] = color
 
         return images, line_images, colors
 
@@ -284,14 +284,22 @@ class KiriDcgan():
                 # print(f"mse={mse:.3f}")
                 y3[p] = [max([0.0, 0.5 - mse]), min([1.0, 0.5 + mse])]
 
-            d_loss_true = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
-            d_loss_fake = self.d_model_s1_tr.train_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
-            d_loss_true_alt = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
+            if val_flg:
+                d_loss_true = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
+                d_loss_fake = self.d_model_s1_tr.test_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
+                d_loss_true_alt = self.d_model_s1_tr.test_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
+            else:
+                d_loss_true = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
+                d_loss_fake = self.d_model_s1_tr.train_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
+                d_loss_true_alt = self.d_model_s1_tr.train_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
 
             d_loss = sum([d_loss_true, d_loss_fake, d_loss_true_alt])/3
             print(f'D_loss={d_loss:.3f}  ',end='')
 
-            g_loss = self.combined.train_on_batch([line_images, hists], [y1, true_images])
+            if val_flg:
+                g_loss = self.combined.test_on_batch([line_images, hists], [y1, true_images])
+            else:
+                g_loss = self.combined.train_on_batch([line_images, hists], [y1, true_images])
             print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})',end='')
 
             # 100epoch毎にテスト画像生成、validuetion
@@ -368,7 +376,7 @@ class KiriDcgan():
         en_alpha=0.3
         stddev=0.05
 
-        input_color = Input(shape=(8,3), name="d_s1_input_color")
+        input_color = Input(shape=(QNUM,4), name="d_s1_input_color")
         color = Flatten()(input_color)
         color = Dense(8*8*8)(color)
         color = LeakyReLU(alpha=en_alpha)(color)
@@ -423,7 +431,7 @@ class KiriDcgan():
         en_alpha=0.3
         dec_alpha=0.1
 
-        input_color = Input(shape=(8,3), name="g_s1_input_color")
+        input_color = Input(shape=(QNUM,4))
         color = Flatten()(input_color)
         color = Dense(8*8*8)(color)
         color = LeakyReLU(alpha=en_alpha)(color)
@@ -545,5 +553,5 @@ if __name__ == "__main__":
                     g_path='g_model_s1.h5', 
                     d_path='d_model_s1.h5',
                     qsize=args.queue_size,
-                    workers=8)
+                    workers=args.workers)
     kiri.train(start_idx=args.idx, total_epochs=1000000, save_epochs=1000, sub_epochs=100)

@@ -28,6 +28,41 @@ def get_args():
     args = parser.parse_args()
     return args
 
+def image_arrange(path, resize=(128,128)):
+    img = Image.open(path)
+    img = new_convert(img, 'RGB')
+    img = ImageOps.autocontrast(img)
+    en = ImageEnhance.Color(img)
+    img = en.enhance(random.choice([0.85, 1.0, 1.1, 1.25]))
+    #画像加工ランダム値
+    rotate_rate = random.randint(0,360) #回転
+    mirror =  random.randint(0,100) % 2
+    resize_rate_w = random.uniform(0.65,1.0)
+    resize_rate_h = random.uniform(0.65,1.0)
+    # 回転
+    img = img.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
+
+    r_img = img.resize( (int(img.width//resize_rate_w), int(img.height//resize_rate_h)), Image.BICUBIC)
+    r_width = random.randint(0, r_img.width  - img.width)
+    r_height = random.randint(0, r_img.height - img.height)
+    img = r_img.crop((r_width, r_height, img.width+r_width, img.height+r_height))
+
+    # 反転
+    if mirror ==0:
+        img = ImageOps.mirror(img)
+
+    #線画化
+    line = image_to_line(img)
+
+    # リサイズ
+    img = img.resize(resize, Image.BICUBIC)
+    small_img = img.resize((128,128), Image.BICUBIC)
+    small_img = small_img.filter(ImageFilter.GaussianBlur(random.uniform(0.5,2.0)))
+
+    line = line.resize(resize, Image.BICUBIC)
+
+    return img, small_img, line
+
 def image_resize(img, resize):
     # アスペクト比維持
     tmp = img
@@ -77,40 +112,9 @@ def new_convert(img, mode):
         bg = img
     return bg.convert(mode)
 
-def image_arrange(path, resize=(128,128)):
-    img = Image.open(path)
-    img = new_convert(img, 'RGB')
-    img = ImageOps.autocontrast(img)
-    en = ImageEnhance.Color(img)
-    img = en.enhance(random.choice([0.85, 1.0, 1.1, 1.25]))
-    #画像加工ランダム値
-    rotate_rate = random.randint(0,360) #回転
-    mirror =  random.randint(0,100) % 2
-    resize_rate_w = random.uniform(0.65,1.0)
-    resize_rate_h = random.uniform(0.65,1.0)
-    # 回転
-    img = img.rotate(rotate_rate, expand=False, resample=Image.BICUBIC)
-
-    r_img = img.resize( (int(img.width//resize_rate_w), int(img.height//resize_rate_h)), Image.BICUBIC)
-    r_width = random.randint(0, r_img.width  - img.width)
-    r_height = random.randint(0, r_img.height - img.height)
-    img = r_img.crop((r_width, r_height, img.width+r_width, img.height+r_height))
-
-    # 反転
-    if mirror ==0:
-        img = ImageOps.mirror(img)
-
-    #線画化
-    line = image_to_line(img)
-
-    # リサイズ
-    img = img.resize(resize, Image.BICUBIC)
-    line = line.resize(resize, Image.BICUBIC)
-    small_line = line.resize((128,128), Image.BICUBIC)
-
+def get_color(img, qnum):
     # カラー情報(減色して、トップｎ個のカラー情報RGBを返す)
-    qnum = 16
-    p = img.resize((128,128), Image.BICUBIC).quantize(qnum)
+    p = img.resize((128,128), Image.NEAREST).quantize(qnum)
     palette = p.getpalette()[:qnum*3]
     colors = sorted(p.getcolors(), key=lambda x: -x[0])[:8]
     rgb = []
@@ -119,8 +123,7 @@ def image_arrange(path, resize=(128,128)):
         rgb.append(palette[3*c:3*(c+1)])
         num.append(n)
 
-    return img, small_line, line, rgb
-
+    return rgb
 
 def make_noise(num):
     RGB = np.random.uniform(-1.0,1.0,(num, 8, 3))
@@ -146,12 +149,11 @@ class DataSet():
             while True:
                 for path in img_path:
                     #本物
-                    img, small_line, line_img, color = image_arrange(path, resize=(512,512))
+                    img, small_img, line_img = image_arrange(path, resize=(512,512))
                     img = (np.asarray(img)-127.5)/127.5
-                    small_line = (np.asarray(small_line)-127.5)/127.5
+                    small_img = (np.asarray(small_img)-127.5)/127.5
                     line_img = (np.asarray(line_img)-127.5)/127.5
-                    color = (np.asarray(color)-127.5)/127.5
-                    que.put((img, small_line, line_img, color))
+                    que.put((img, small_img, line_img))
 
         len_images = len(images)
         for i in range(workers):
@@ -166,17 +168,15 @@ class DataSet():
             tmp_que = self.image_que
 
         images = np.zeros((size, 512, 512, 3))
-        small_line_images = np.zeros((size, 128, 128))
+        small_images = np.zeros((size, 128, 128, 3))
         line_images = np.zeros((size, 512, 512))
-        colors = np.zeros((size, 8, 3))
         for i in range(size):
-            img, small_line, line, hist = tmp_que.get()
+            img, small_img, line = tmp_que.get()
             images[i] = img
-            small_line_images[i] = small_line
+            small_images[i] = small_img
             line_images[i] = line
-            colors[i] = hist
 
-        return images, small_line_images, line_images, colors
+        return images, small_images, line_images
 
 class KiriDcgan():
     def __init__(self, image_path, batch_size, GPUs, g_s1_path, g_path, d_path, result_path='results/', qsize=4096, workers=1):
@@ -200,12 +200,6 @@ class KiriDcgan():
         else:
             self.g_model_s2 = self.build_generator()
 
-        def summary_write(line):
-            f.write(line+"\n")
-        with open('g_model_s2.txt', 'w') as f:
-            self.g_model_s2.summary(print_fn=summary_write)
-        plot_model(self.g_model_s2, to_file='g_model_s2.png')
-
         # マージジェネレータ（S1+S2）
         _tmpmdl = self.build_merged_generator(self.frozen_g_s1, self.g_model_s2)
         if GPUs > 1:
@@ -213,32 +207,13 @@ class KiriDcgan():
         else:
             self.merged_generator = _tmpmdl
 
-        # 判定器（Ｓ２）ロードorビルド
-        if os.path.exists(d_path):
-            self.d_model_s2 = load_model(d_path)
-        else:
-            self.d_model_s2 = self.build_discriminator()
+        def summary_write(line):
+            f.write(line+"\n")
+        with open('g_model_s2.txt', 'w') as f:
+            self.g_model_s2.summary(print_fn=summary_write)
+        plot_model(self.g_model_s2, to_file='g_model_s2.png')
 
-        if GPUs > 1:
-            self.d_model_s2_tr = multi_gpu_model(self.d_model_s2, gpus=GPUs)
-        else:
-            self.d_model_s2_tr = self.d_model_s2
-        self.d_model_s2_tr.compile(loss='categorical_crossentropy',   #binary_crossentropy
-                        optimizer=Nadam(),
-                        )
-        with open('d_model_s1.txt', 'w') as f:
-            self.d_model_s2.summary(print_fn=summary_write)
-
-        self.frozen_d = self.build_frozen_model(self.d_model_s2)
-
-        _tmpmdl = self.build_combined(self.frozen_g_s1, self.g_model_s2, self.frozen_d)
-        if GPUs > 1:
-            self.combined = multi_gpu_model(_tmpmdl, gpus=GPUs)
-        else:
-            self.combined = _tmpmdl
-
-        self.combined.compile(loss=['categorical_crossentropy', 'mean_squared_error'],
-                        loss_weights=[1.0, 1.0],
+        self.g_model_s2.compile(loss=['mean_squared_error'],
                         optimizer=Nadam(),
                         )
 
@@ -254,14 +229,17 @@ class KiriDcgan():
                 print(f'\repochs={epoch:6d}/{total_epochs:6d}:', end='')
                 val_flg = False
 
-            true_images, small_line_images, line_images, hists = self.dataset.get_data(self.batch_size, val=val_flg)
-            y1 = np.zeros((self.batch_size, 2))
-            for p in range(self.batch_size):
-                r = random.uniform(0.0, 0.2)
-                y1[p] = [1.0 - r, 0.0 + r]
+            true_images, small_images, line_images = self.dataset.get_data(self.batch_size, val=val_flg)
 
-            fake_images = self.merged_generator.predict_on_batch([small_line_images, hists, line_images])
+            if val_flg:
+                g_loss = self.g_model_s2.test_on_batch([line_images, small_images], true_images)
+            else:
+                g_loss = self.g_model_s2.train_on_batch([line_images, small_images], true_images)
+
+            print(f'G_loss={g_loss:.3f}',end='')
+
             if epoch % 10 == 0:
+                fake_images = self.g_model_s2.predict_on_batch([line_images, small_images])
                 filename = os.path.join("temp/", f"gen.png")
                 tmp = (fake_images[0]*127.5+127.5).clip(0, 255).astype(np.uint8)
                 Image.fromarray(tmp).save(filename, optimize=True)
@@ -274,26 +252,6 @@ class KiriDcgan():
                 tmp = (true_images[0]*127.5+127.5).clip(0, 255).astype(np.uint8)
                 Image.fromarray(tmp).save(filename, optimize=True)
 
-            y2 = np.zeros((self.batch_size, 2))
-            for p in range(self.batch_size):
-                r = random.uniform(0.0, 0.2)
-                y2[p] = [0.0 + r, 1.0 - r]
-
-            noise = make_noise(self.batch_size)
-            y3 = np.zeros((self.batch_size, 2))
-            for p in range(self.batch_size):
-                r = random.uniform(0.0, 0.2)
-                y3[p] =  [0.0 + r, 1.0 - r]
-
-            d_loss_true = self.d_model_s2_tr.train_on_batch([true_images[:self.batch_size//3], hists[:self.batch_size//3]], y1[:self.batch_size//3])
-            d_loss_fake = self.d_model_s2_tr.train_on_batch([fake_images[:self.batch_size//3], hists[:self.batch_size//3]], y2[:self.batch_size//3])
-            d_loss_true_alt = self.d_model_s2_tr.train_on_batch([true_images[:self.batch_size//3], noise[:self.batch_size//3]], y3[:self.batch_size//3])
-
-            d_loss = sum([d_loss_true, d_loss_fake, d_loss_true_alt])/3
-            print(f'D_loss={d_loss:.3f}  ',end='')
-
-            g_loss = self.combined.train_on_batch([small_line_images, hists, line_images], [y1, true_images])
-            print(f'G_loss={g_loss[0]:.3f}({g_loss[1]:.3f},{g_loss[2]:.3f})',end='')
 
             # 100epoch毎に
             if epoch%sub_epochs == 0:
@@ -303,22 +261,15 @@ class KiriDcgan():
             if epoch%save_epochs == 0:
                 self.on_epoch_end(epoch)
 
-
     def on_epoch_end(self,epoch):
         self.g_model_s2.save(self.g_path)
-        self.d_model_s2.save(self.d_path)
         save_path = os.path.join(self.result_path, f'{epoch:06d}')
-        os.makedirs(os.path.join(save_path,"d2"), exist_ok=True)
         os.makedirs(os.path.join(save_path,"g2"), exist_ok=True)
-        self.d_model_s2.save(os.path.join(save_path, self.d_path))
         self.g_model_s2.save(os.path.join(save_path, self.g_path))
-
-        self._discrimin_test(epoch, os.path.join(save_path,"d2"))
         self._generator_test(epoch, os.path.join(save_path,"g2"))
 
     def g_on_epoch_end_sub(self, epoch):
         self._generator_test(epoch, None, True)
-
 
     def _generator_test(self, epoch, result_path, short=False, num=3):
         if short:
@@ -357,85 +308,11 @@ class KiriDcgan():
                 Image.fromarray(tmp).save(filename, optimize=True)
 
 
-    def _discrimin_test(self, epoch, result_path, num=6):
-        #判定
-        true_imgs, small_line_images, line_images, hists = self.dataset.get_data(num)
-        fake_imgs = self.merged_generator.predict_on_batch([small_line_images[-num:], hists, line_images[-num:]])
-        imgs = np.concatenate([true_imgs,fake_imgs], axis=0)
-        hists = hists.repeat(2, axis=0)
-        results = self.d_model_s2_tr.predict_on_batch([imgs, hists])
-        for i,(img,result) in enumerate(zip(imgs,results)):
-            filename = f'd{i:02}[{result[0]:1.2f}][{result[1]:1.2f}].png'
-            tmp = (img*127.5+127.5).clip(0, 255).astype(np.uint8)
-            Image.fromarray(tmp).save(os.path.join(result_path, filename), 'png', optimize=True)
-
-
-    def build_discriminator(self):
-        en_alpha=0.3
-        stddev=0.05
-
-        input_color = Input(shape=(8,3), name="d_s1_input_color")
-        color = Flatten()(input_color)
-        color = Dense(32*32*8)(color)
-        color = LeakyReLU(alpha=en_alpha)(color)
-        color = Reshape(target_shape=(32, 32, 8))(color)
-
-        input_image = Input(shape=(512, 512, 3), name="d_s1_input_main")
-
-        model = GaussianNoise(stddev)(input_image)
-        model = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(model)
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-        model = Conv2D(filters=64,  kernel_size=4, strides=2, padding='same')(model) # >64
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-
-        model = Conv2D(filters=64,  kernel_size=3, strides=1, padding='same')(model)
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-        gap1  = GlobalAveragePooling2D()(model)
-        model = Conv2D(filters=128, kernel_size=4, strides=2, padding='same')(model) # >32
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-
-        model = Conv2D(filters=128,  kernel_size=3, strides=1, padding='same')(model)
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-        gap2  = GlobalAveragePooling2D()(model)
-        model = Conv2D(filters=256,  kernel_size=4, strides=2, padding='same')(model) # >16
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-
-        model = Conv2D(filters=256,  kernel_size=3, strides=1, padding='same')(model)
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-        gap3  = GlobalAveragePooling2D()(model)
-        model = Conv2D(filters=512,  kernel_size=4, strides=2, padding='same')(model) # >8
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-
-        model = Concatenate()([model, color])
-        model = Conv2D(filters=512,  kernel_size=3, strides=1, padding='same')(model)
-        model = BatchNormalization(momentum=0.8)(model)
-        model = LeakyReLU(alpha=en_alpha)(model)
-        model = GlobalAveragePooling2D()(model)
-
-        model = Concatenate()([gap1, gap2, gap3, model])
-        model = Dense(2)(model)
-        truefake = Activation('softmax', name="d_s1_out1_trfk")(model)
-        return Model(inputs=[input_image, input_color], outputs=[truefake])
-
     def build_generator(self):
         en_alpha=0.3
         dec_alpha=0.1
 
-        input_color_vec = Input(shape=(8,3), name="g_s1_input_color")
-        color_vec = Flatten()(input_color_vec)
-        color_vec = Dense(32*32*8)(color_vec)
-        color_vec = LeakyReLU(alpha=en_alpha)(color_vec)
-        color_vec = Reshape(target_shape=(32, 32, 8))(color_vec)
-
-        input_color = Input(shape=(128, 128, 3), name="g_s2_input_color")
+        input_color = Input(shape=(128, 128, 3))
         color = Conv2D(filters=32,  kernel_size=3, strides=1, padding='same')(input_color)
         color = BatchNormalization(momentum=0.8)(color)
         color = LeakyReLU(alpha=en_alpha)(color)
@@ -496,7 +373,7 @@ class KiriDcgan():
         e8 = model
 
         model = Dropout(0.5)(model)
-        model = Concatenate()([model, color, color_vec])
+        model = Concatenate()([model, color])
         model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -540,20 +417,12 @@ class KiriDcgan():
 
         model = Conv2D(filters=3  , kernel_size=3, strides=1, padding='same')(model)
 
-        return Model(inputs=[input_line, input_color, input_color_vec], outputs=[model])
-
+        return Model(inputs=[input_line, input_color], outputs=[model])
 
     def build_merged_generator(self, generator_s1, generator_s2):
         return Model(inputs=[generator_s1.inputs[0], generator_s1.inputs[1], generator_s2.inputs[0]], 
-                    outputs=[generator_s2([generator_s2.inputs[0], generator_s1.outputs[0], generator_s1.inputs[1]])]
+                    outputs=[generator_s2([generator_s2.inputs[0], generator_s1.outputs[0]])]
             )
-
-
-    def build_combined(self, generator_s1, generator_s2, discriminator):
-        merged_generator = self.build_merged_generator(generator_s1, generator_s2)
-        return Model(inputs=[merged_generator.inputs[0], merged_generator.inputs[1], merged_generator.inputs[2]], 
-            outputs=[discriminator([merged_generator.outputs[0],  merged_generator.inputs[1]]), merged_generator.outputs[0]])
-
 
     def build_frozen_model(self, model):
         frozen_d = Model(inputs=model.inputs, outputs=model.outputs)
