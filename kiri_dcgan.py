@@ -124,8 +124,12 @@ def image_arrange(path, resize=(128,128)):
 
 def make_noise(num):
     RGB = np.random.uniform(-1.0,1.0,(num, QNUM, 3))
-    RGB[:, :2, :] += 5.0  # 背景を白っぽくするため
-    N = np.random.uniform(0.0,1.0,(num, QNUM, 1))
+    RGB[:, :2, :] += 0.5  # 背景を白っぽくするため
+    N = np.random.uniform(0.0,1.0,(num, QNUM))
+    N = np.sort(N,axis=1)[::,::-1]
+    N[:,:1] += 1.0
+    N[:,:2] += 1.0
+    N = (N/np.sum(N,axis=1).reshape((num,1))).reshape((num, QNUM, 1))
 
     return np.concatenate([RGB,N],axis=-1)
 
@@ -476,7 +480,7 @@ class KiriDcgan():
         model = LeakyReLU(alpha=en_alpha)(model)
         e8 = model
 
-        model = Dropout(0.5)(model)
+        # model = Dropout(0.5)(model)
         model = Concatenate()([model, color])
         model = Conv2D(filters=512, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
@@ -501,11 +505,13 @@ class KiriDcgan():
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
 
+        # model = Dropout(0.5)(model)
         model = Concatenate()([model,e32])
         model = Conv2DTranspose(filters=128, kernel_size=4, strides=2, padding='same')(model)  #32->64
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=dec_alpha)(model)
 
+        # model = GaussianNoise(0.1)(model)
         model = Conv2D(filters=64, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
@@ -515,6 +521,7 @@ class KiriDcgan():
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=dec_alpha)(model)
 
+        # model = GaussianNoise(0.1)(model)
         model = Conv2D(filters=32, kernel_size=3, strides=1, padding='same')(model)
         model = BatchNormalization(momentum=0.8)(model)
         model = LeakyReLU(alpha=en_alpha)(model)
